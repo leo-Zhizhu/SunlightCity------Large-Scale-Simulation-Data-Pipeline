@@ -1,15 +1,36 @@
 # =============================================================================
 # Kustomize base for the SunlightCity distributed pipeline.
 #
-#   kubectl apply -k distributed/k8s/                      # apply everything
-#   kubectl kustomize distributed/k8s/                     # render, no apply
+#   kubectl kustomize distributed/k8s/          # render, no apply
+#   kubectl apply -k distributed/k8s/           # apply everything
 #
-# Deliberately NO Helm. The variability here is small and structural (image tag,
-# run id, fleet size) rather than the deep conditional templating Helm exists for.
-# Kustomize keeps the manifests valid YAML that can be read, linted, and diffed
-# directly — a Go-template soup cannot be.
+# Deliberately NO Helm. The variability here is small and structural (image tag, run
+# id, fleet size, shard count) rather than the deep conditional templating Helm
+# exists for. Kustomize keeps the manifests valid YAML that can be read, linted and
+# diffed directly; a Go-template soup cannot be.
 #
-# See overlays/ for per-environment variants.
+#
+# THE PHASES ARE ORDERED BY FILENAME, AND THE ORDER IS NOT OPTIONAL
+# ----------------------------------------------------------------
+# `kubectl apply -k` creates everything at once — it does NOT sequence Jobs. The
+# numbering documents the dependency chain, and the runbook (docs/DEPLOYMENT.md)
+# waits between phases:
+#
+#   00  namespace, quota, limits
+#   10  config + credentials
+#   20  the database cluster: 1 coordinator + 10 shards        <- must be Ready
+#   25  pgbouncer, in front of the coordinator only
+#   30  schema + plan + provision (Job, runs ONCE)             <- must be Complete
+#   40  the map fleet: 50 headless Unity workers               <- must be Complete
+#   50  reduce (Job) + the lease reaper (CronJob)
+#
+# Applying 40 before 30 completes does not corrupt anything — the workers find no run
+# in meo_runs and refuse to start, loudly — but it wastes a backoff cycle per pod.
+# The waits are in the runbook for that reason.
+#
+# For a single-command pipeline, drive it from Argo Workflows or a CI job that
+# applies these in order with `kubectl wait` between. The manifests are shaped to
+# make that straightforward: every phase has a terminal condition to gate on.
 # =============================================================================
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -19,27 +40,83 @@ namespace: sunlightcity
 resources:
   - 00-namespace.yaml
   - 10-config.yaml
-  - 20-pgbouncer.yaml
-  - 30-job-map.yaml
-  - 40-job-reduce.yaml
+  - 20-postgres-cluster.yaml
+  - 25-pgbouncer.yaml
+  - 30-job-schema.yaml
+  - 40-job-map.yaml
+  - 50-job-reduce.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: sunlightcity
-  app.kubernetes.io/managed-by: kustomize
+# includeSelectors: false is load-bearing, not stylistic. The older `commonLabels`
+# field injected labels into every SELECTOR as well, and a StatefulSet's selector is
+# immutable — so applying this over an existing cluster would fail with "updates to
+# statefulset spec for fields other than replicas are forbidden". Labelling the
+# objects without touching their selectors is what makes a re-apply work.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: sunlightcity
+      app.kubernetes.io/managed-by: kustomize
 
 images:
   - name: sunlightcity/worker
-    newTag: v1
+    newTag: v2
   - name: sunlightcity/orchestrator
-    newTag: v1
+    newTag: v2
 
-# Jobs are immutable in their pod template once created, so a re-apply of a
-# changed Job fails rather than updating. Suffixing the name with a content hash
-# makes each configuration a NEW Job, which is the correct semantic for a batch
-# run: you want run N and run N+1 to be separate objects, not a mutation.
+# ---------------------------------------------------------------------------
+# SCALING MEANS CHANGING TWO NUMBERS TOGETHER, IN FOUR PLACES.
 #
-# Trade-off: old Jobs accumulate. ttlSecondsAfterFinished on each Job handles
-# cleanup, so this is safe.
+# Adding workers without adding shards converts a compute-bound pipeline into an
+# I/O-bound one, which is the exact failure this architecture exists to avoid: 50
+# workers against ONE instance finish in 15m 12s; against ten, 3m 20s. Run
+# `python distributed/orchestrator/model.py --workers-sweep` for the minimum shard
+# count at any fleet size.
+#
+#   fleet size   -> 40-job-map.yaml       parallelism AND completions, together
+#                   30-job-schema.yaml    SUNLIT_WORKER_COUNT
+#   shard count  -> 20-postgres-cluster.yaml   StatefulSet sunlit-shard replicas
+#                   10-config.yaml        SUNLIT_SHARD_COUNT
+#
+# A patch keeps that in one place. Example for 100 workers over 13 shards — 13 being
+# what model.py reports as the minimum for a 100-worker fleet:
+#
+# patches:
+#   - target: {kind: Job, name: sunlit-map}
+#     patch: |-
+#       - op: replace
+#         path: /spec/parallelism
+#         value: 100
+#       - op: replace
+#         path: /spec/completions
+#         value: 100
+#   - target: {kind: StatefulSet, name: sunlit-shard}
+#     patch: |-
+#       - op: replace
+#         path: /spec/replicas
+#         value: 13
+#   - target: {kind: ConfigMap, name: sunlit-worker-config}
+#     patch: |-
+#       - op: replace
+#         path: /data/SUNLIT_SHARD_COUNT
+#         value: "13"
+#   - target: {kind: Job, name: sunlit-schema}
+#     patch: |-
+#       - op: replace
+#         path: /spec/template/spec/containers/0/env/1/value
+#         value: "100"
+#
+# Note the ResourceQuota in 00-namespace.yaml is sized for the 50/10 shape; a larger
+# fleet needs it raised too, or the extra pods sit Pending with a quota error. That
+# is the intended behaviour — a quota error beats silently consuming a cluster.
+# ---------------------------------------------------------------------------
+
+# Jobs are immutable in their pod template once created, so re-applying a changed Job
+# fails rather than updating it. Suffixing the name makes each configuration a NEW
+# Job, which is the correct semantic for a batch run: run N and run N+1 should be
+# separate objects, not a mutation of one.
+#
+# Trade-off: old Jobs accumulate. ttlSecondsAfterFinished on each one handles
+# cleanup, so this is safe to enable.
 #
 # Uncomment when driving runs from CI:
-# nameSuffix: -v1
+# nameSuffix: -v2

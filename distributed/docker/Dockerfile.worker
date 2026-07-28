@@ -6,8 +6,9 @@
 # tooling beyond what the entrypoint needs.
 #
 # Why this matters at 50 pods: every node must pull this image before any work
-# starts. A 3 GB image on a 50-node cold start is minutes of pure latency before
-# the first raycast; a ~400 MB image is seconds.
+# starts. A 3 GB image on a 50-node cold start is minutes of pure latency before the
+# first raycast; a ~400 MB image is seconds — and at a 3-minute total runtime, image
+# pull is a measurable fraction of the whole pipeline rather than a rounding error.
 #
 # BASE IMAGE CHOICE — ubuntu:22.04, not alpine or distroless
 # ----------------------------------------------------------
@@ -93,21 +94,32 @@ USER sunlit
 # Defaults. Everything is overridable by the Kubernetes ConfigMap; these exist so
 # `docker run` works for a local smoke test without a wall of -e flags.
 # -----------------------------------------------------------------------------
-ENV SUNLIT_DB_HOST=postgres \
-    SUNLIT_DB_PORT=5432 \
-    SUNLIT_DB_NAME=city_data \
+ENV SUNLIT_COORD_HOST=pgbouncer \
+    SUNLIT_COORD_PORT=6432 \
+    SUNLIT_COORD_DB=sunlit_coord \
     SUNLIT_DB_USER=admin \
+    SUNLIT_SHARD_HOST_TEMPLATE=sunlit-shard-{i}.sunlit-shards \
+    SUNLIT_SHARD_PORT=5432 \
+    SUNLIT_SHARD_DB_TEMPLATE=sunlit_shard_{i} \
     SUNLIT_LEASE_SECONDS=900 \
     SUNLIT_HEARTBEAT_SECONDS=30 \
     SUNLIT_EMPTY_POLL_SECONDS=10 \
-    SUNLIT_MAX_EMPTY_POLLS=6 \
+    SUNLIT_MAX_EMPTY_POLLS=12 \
     SUNLIT_GLOBAL_ELEVATION=-112.0 \
     SUNLIT_SUN_ANGLE_THRESHOLD=5.0 \
     SUNLIT_CITY=Manhattan \
     SUNLIT_SOLAR_YEAR=2026 \
-    SUNLIT_EMIT_RAW=false \
-    SUNLIT_COPY_BATCH_ROWS=250000 \
-    SUNLIT_TASK_TIMEOUT_SECONDS=3600 \
+    SUNLIT_RAY_ORIGIN_LIFT=3.0 \
+    SUNLIT_MAX_RAY_DISTANCE=10000.0 \
+    SUNLIT_MAX_BUILDING_METRES=200.0 \
+    SUNLIT_SECTION_ORIGIN_X=0.0 \
+    SUNLIT_SECTION_ORIGIN_Z=0.0 \
+    SUNLIT_SECTION_METERS=1000.0 \
+    SUNLIT_SECTION_COLS=128 \
+    SUNLIT_MAX_SECTION_SAMPLES=16384 \
+    SUNLIT_MAX_STEPS_PER_WINDOW=60 \
+    SUNLIT_MIN_COMMANDS_PER_JOB=64 \
+    SUNLIT_TASK_TIMEOUT_SECONDS=1800 \
     SUNLIT_VERBOSE=false
 
 # No HEALTHCHECK: this is a batch Job, not a service. Liveness is expressed

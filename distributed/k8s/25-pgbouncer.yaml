@@ -1,8 +1,28 @@
 # =============================================================================
-# PgBouncer — connection pooler between the fleet and PostgreSQL.
+# PgBouncer — connection pooler in front of the COORDINATOR ONLY.
 #
-# WHY THIS EXISTS
-# ---------------
+# WHICH HALF OF THE CLUSTER THIS FRONTS, AND WHY NOT THE OTHER
+# -----------------------------------------------------------
+# The COORDINATOR gets a pooler. Fifty workers each issue a claim, ~40 heartbeats
+# and a completion per task — thousands of tiny transactions from many clients, each
+# holding a backend for milliseconds. That is precisely the shape a transaction
+# pooler exists for, and it collapses 50 clients onto ~25 backends.
+#
+# The DATA SHARDS do not, and that is a decision rather than an omission:
+#
+#   * A pooler in a sustained bulk-COPY path is a SINGLE-THREADED PROCESS RELAYING
+#     EVERY BYTE. At the fleet's ~700 MB/s it would become the bottleneck the whole
+#     database cluster was built to remove.
+#   * And it would be solving nothing. Pooling multiplexes many clients onto few
+#     backends; sharding has already reduced each instance to ten backends (five
+#     workers x two COPY streams). There is nothing left to pool.
+#
+# So: control plane through the pooler, data plane direct. The reduce Job and the
+# schema Job also connect direct, because their statements are long and
+# session-affine and would pin a pooled backend for minutes.
+#
+# WHY A POOLER AT ALL FOR SO LITTLE TRAFFIC
+# -----------------------------------------
 # Each PostgreSQL backend is a full OS process with its own ~10 MB of private
 # memory plus a share of work_mem per sort node. 50 workers each holding a
 # connection is tolerable; the problem is the SHAPE of their usage:
@@ -45,8 +65,10 @@ metadata:
 data:
   pgbouncer.ini: |
     [databases]
-    ; Explicit target; * would let a client pick any database.
-    city_data = host=postgres port=5432 dbname=city_data
+    ; Explicit target; * would let a client pick any database — including, on a
+    ; shared pooler, a shard. Naming only the coordinator makes "the data plane does
+    ; not go through here" a property of the config rather than a convention.
+    sunlit_coord = host=sunlit-coordinator port=5432 dbname=sunlit_coord
 
     [pgbouncer]
     listen_addr = 0.0.0.0
@@ -59,9 +81,10 @@ data:
     pool_mode = transaction
 
     ; Backends per (database, user). Sized well below the fleet size on purpose:
-    ; workers are compute-bound and only intermittently need a backend, so 25
-    ; backends comfortably serve 50 workers. This is the number that actually
-    ; protects PostgreSQL's memory.
+    ; workers are compute-bound and only intermittently need a backend — a claim is
+    ; milliseconds, then ~1.8 s of raycasting — so 25 backends comfortably serve 50
+    ; workers. This is the number that actually protects the coordinator's memory,
+    ; and the coordinator is a 32 GB instance rather than a 128 GB one.
     default_pool_size = 25
 
     ; Burst headroom for the reduce phase, when several long aggregate queries
@@ -75,10 +98,12 @@ data:
     max_db_connections = 40
 
     ; ---- Timeouts ---------------------------------------------------------
-    ; 0 = no limit. The promote step's INSERT..SELECT and the reduce phase's index
-    ; builds legitimately run for minutes; any finite query_timeout here would
-    ; sever them mid-flight and, worse, do so invisibly from the worker's side.
-    query_timeout = 0
+    ; Every statement that reaches this pooler is a small control-plane call, so a
+    ; finite timeout is now both safe and useful — 30 s means a wedged claim surfaces
+    ; instead of hanging a worker. The long, session-affine work (geometry
+    ; replication, index builds, the per-shard rollup) connects DIRECTLY and is
+    ; unaffected by this.
+    query_timeout = 30
     query_wait_timeout = 300
 
     ; Recycle idle backends so a scaled-down fleet does not pin memory.
@@ -171,7 +196,7 @@ spec:
               name: pgbouncer
           env:
             - name: DB_HOST
-              value: postgres
+              value: sunlit-coordinator
             - name: DB_PORT
               value: "5432"
             - name: DB_USER

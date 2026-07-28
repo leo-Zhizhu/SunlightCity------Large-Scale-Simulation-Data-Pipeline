@@ -1,12 +1,26 @@
 # =============================================================================
-# Orchestrator image: task planner, reducer, monitor, lease reaper.
+# Orchestrator image: schema bootstrap, task planner, monitor, reaper, reducer.
 #
-# Pure Python — no Unity, no engine. ~120 MB against the worker's ~400 MB, which
-# matters because the lease-reaper CronJob pulls this every minute.
+# Pure Python — no Unity, no engine, and deliberately no psql either. ~120 MB
+# against the worker's ~400 MB, which matters because the lease-reaper CronJob pulls
+# this every minute for the duration of a run.
 #
 #   docker build -f distributed/docker/Dockerfile.orchestrator \
-#       -t sunlightcity/orchestrator:v1 .
+#       -t sunlightcity/orchestrator:v2 .
 # (build context = repo root, so distributed/ is visible)
+#
+# WHY NO postgresql-client
+# ------------------------
+# Applying six SQL files across eleven instances is the obvious job for psql, and
+# apply_schema.py does it through psycopg2 instead. That is not a preference: the
+# script has to know WHICH files go to WHICH role, resolve shard endpoints from the
+# coordinator's own meo_shards registry, and strip psql backslash meta-commands that
+# are invalid over a normal connection. A shell loop around psql would need the
+# endpoint list passed in — which is exactly the duplication the registry exists to
+# remove — and would silently apply a shard file to the coordinator if the loop
+# bounds were wrong.
+#
+# It also keeps the image free of a client whose libpq could drift from psycopg2's.
 # =============================================================================
 
 FROM python:3.11-slim-bookworm
@@ -31,21 +45,36 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.
 WORKDIR /app
 
 COPY distributed/orchestrator/*.py /app/
-# The reducer executes 04_post_load_indexes.sql by path, so the SQL must ship too.
+
+# The SQL ships too: apply_schema.py applies 01-04 and 06 by path, and
+# reduce_finalize.py runs 05 against each shard. Both default --sql-dir to /app/db
+# via SUNLIT_SQL_DIR below.
 COPY distributed/db/*.sql /app/db/
 
 RUN set -eux; \
     groupadd --gid 10002 orch; \
     useradd --uid 10002 --gid 10002 --no-create-home --shell /usr/sbin/nologin orch; \
     chown -R orch:orch /app; \
-    python -m py_compile /app/*.py
+    # Fail the IMAGE BUILD on a syntax error rather than a pod at 3am. Cheap, and it
+    # has caught a bad edit more than once.
+    python -m py_compile /app/*.py; \
+    # Assert the SQL actually made it in. A missing file here fails the schema Job
+    # with FileNotFoundError after it has already touched the coordinator.
+    test -f /app/db/01_cluster_topology.sql; \
+    test -f /app/db/02_work_queue.sql; \
+    test -f /app/db/03_shard_schema.sql; \
+    test -f /app/db/04_bulk_load_tuning.sql; \
+    test -f /app/db/05_post_load_indexes.sql; \
+    test -f /app/db/06_serving_federation.sql; \
+    echo "SQL shipped:"; ls -1 /app/db/
 
 USER orch
 
-# --sql-dir default points at ../db relative to the script; inside the image the
-# SQL lives at /app/db, so callers pass --sql-dir=/app/db (the k8s Job does).
+# --sql-dir defaults to ../db relative to the script, which is /db inside the image
+# rather than /app/db. Setting SUNLIT_SQL_DIR here means callers need not pass it,
+# and the k8s Jobs pass it anyway so the path is visible in the manifest.
 ENV SUNLIT_SQL_DIR=/app/db
 
 # No ENTRYPOINT: this image hosts four distinct commands and the Job/CronJob
 # specifies which. Baking one in would mean overriding it everywhere.
-CMD ["python", "-c", "print('Specify a command: plan_tasks.py | monitor.py | reduce_finalize.py | pg_tune.py')"]
+CMD ["python", "-c", "print('Specify a command: apply_schema.py | plan_tasks.py | monitor.py | reduce_finalize.py | pg_tune.py | model.py | cluster.py')"]

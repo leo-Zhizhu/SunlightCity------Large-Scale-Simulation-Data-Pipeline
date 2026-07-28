@@ -1,0 +1,250 @@
+# =============================================================================
+# THE REDUCE PHASE — finalise the dataset after the map fleet drains.
+#
+# One small pod that drives all ten shards concurrently. In a classic MapReduce this
+# is where the shuffle happens and where most of the cost lives; here it is
+# bookkeeping, and the reason is a decision made in 01_cluster_topology.sql:
+#
+#   A SECTION OWNS WHOLE EDGES, assigned by edge midpoint. So every sample point of
+#   a given edge lives in one section, every section lives on one shard, and the
+#   rollup GROUP BY (edge_id, datetime) is COMPLETE within a single instance.
+#
+# There is therefore nothing to merge across shards — no shuffle, no barrier, no
+# coordinator gathering partial sums. Ten instances each aggregate their own tenth of
+# a billion rows in parallel and stop, which is why this is ~48 s rather than ~8 min.
+#
+# Had sections been defined by sample-point position instead, ~12% of edges would
+# straddle a boundary, this pod would have needed a distributed sum, and every
+# routing query would have become a cross-shard join for the life of the dataset.
+#
+# THE POD IS SMALL BECAUSE THE WORK IS NOT HERE. It opens ten sockets and waits;
+# every aggregate, index build and ANALYZE runs inside a shard, governed by that
+# instance's maintenance_work_mem. Sizing this container generously would do nothing.
+#
+# Run AFTER the map Job completes. Gate it in CI/Argo on:
+#     kubectl -n sunlightcity wait --for=condition=complete job/sunlit-map --timeout=2h
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sunlit-reduce
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: reduce
+spec:
+  # Exactly one. The fan-out across shards happens INSIDE the pod, on a thread pool,
+  # because each shard needs one coordinated sequence (verify -> rollup -> index ->
+  # ANALYZE) and two pods racing on the same instance would duplicate the rollup.
+  parallelism: 1
+  completions: 1
+
+  # Only 2 retries. Unlike a map task, a reduce failure is almost never transient —
+  # it usually means the map phase left gaps or a leaf has the wrong row count, and
+  # retrying cannot fix either. Failing fast surfaces the real problem instead of
+  # burning time re-running aggregates.
+  backoffLimit: 2
+
+  # 2 h. The expected figure is ~48 s; the margin is for a shard whose page cache is
+  # cold, which turns the rollup's sequential scan into real I/O.
+  activeDeadlineSeconds: 7200
+  ttlSecondsAfterFinished: 86400   # keep a day: this pod's log is the run's report
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sunlightcity
+        app.kubernetes.io/component: reduce
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        fsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: reduce
+          # Plain Python + psycopg2; no Unity needed. ~120 MB against the worker's
+          # ~400 MB.
+          image: sunlightcity/orchestrator:v2
+          imagePullPolicy: IfNotPresent
+
+          # -u: unbuffered stdout, so `kubectl logs -f` shows each shard reporting as
+          # it finishes rather than in 8 KB bursts at the end.
+          command: ["python", "-u", "/app/reduce_finalize.py"]
+          args:
+            - --run-id=$(SUNLIT_RUN_ID)
+            - --sql-dir=/app/db
+
+          env:
+            - name: SUNLIT_RUN_ID
+              value: "run-2026-annual"
+
+            # DIRECT to the coordinator, bypassing PgBouncer. Deliberate: this pod
+            # runs long, session-affine statements, and a transaction-mode pooler is
+            # the wrong tool for them. It would also pin a pooled backend for the
+            # duration, starving anything still claiming.
+            #
+            # The SHARD connections are always direct — the pooler only ever fronts
+            # the coordinator.
+            - name: SUNLIT_COORD_HOST
+              value: "sunlit-coordinator"
+            - name: SUNLIT_COORD_PORT
+              value: "5432"
+
+          envFrom:
+            - configMapRef:
+                name: sunlit-worker-config
+            - secretRef:
+                name: sunlit-db-credentials
+
+          resources:
+            requests:
+              # Ten concurrent sockets and a thread each. The heavy lifting is inside
+              # PostgreSQL — see the header.
+              cpu: "1"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+# =============================================================================
+# LEASE REAPER — the failure-recovery daemon.
+#
+# Runs every minute for the duration of a run. Its entire job is to call
+# meo_reap_expired_leases(), which returns tasks whose workers stopped heartbeating
+# to the pending pool, and to sweep orphaned partition leaves off the shards.
+#
+# WHY A CRONJOB AND NOT A CONTROLLER
+# ----------------------------------
+# The reaping logic is one SQL function call. A custom controller watching pod
+# lifecycle events would be more code, more RBAC, and STRICTLY WORSE at the job:
+# pod-death events do not fire for a network partition, a frozen kernel, or a
+# container that is running but wedged. Lease expiry covers all of them uniformly,
+# because it observes the only thing that matters — whether progress is being
+# reported.
+#
+# TWO THINGS IT RECOVERS, and the second is easy to overlook:
+#
+#   1. THE TASK. It returns to 'pending' and another worker picks it up.
+#   2. THE SHARD'S ADMISSION SLOT. meo_claim_task refuses to dispatch to a shard
+#      already running its cap of concurrent tasks. A dead worker holds one of those
+#      slots until its lease expires — so without reaping, every node failure would
+#      permanently shrink the cluster's usable write concurrency for the rest of the
+#      run. That degradation would be invisible: no error, just a fleet gradually
+#      getting slower.
+#
+# --sweep-leaves drops unattached partition leaves left by a worker killed between
+# CREATE and ATTACH. Unlike the UNLOGGED staging tables of an earlier design these
+# hold REAL DISK — ~20 MB each — and they are invisible through the parent, so
+# nothing else would ever notice them.
+# =============================================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sunlit-lease-reaper
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: reaper
+spec:
+  schedule: "* * * * *"          # every minute
+
+  # Forbid overlap: two concurrent reapers would race on the same rows. Harmless
+  # (the UPDATE is atomic) but pointless, and it muddies the logs.
+  concurrencyPolicy: Forbid
+
+  # If the cluster was busy and we missed the window, do not run a backlog — reaping
+  # is idempotent and the next tick handles everything.
+  startingDeadlineSeconds: 30
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # The leaf sweep touches all ten shards; 3 min is ample and still bounded below
+      # the point where a stuck reaper would overlap two later ticks.
+      activeDeadlineSeconds: 180
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10002
+            runAsGroup: 10002
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reaper
+              image: sunlightcity/orchestrator:v2
+              command: ["python", "-u", "/app/monitor.py"]
+              args:
+                - --run-id=$(SUNLIT_RUN_ID)
+                - --reap
+                - --sweep-leaves
+                - --once
+                # --quiet: the dashboard is for humans. This prints only what it
+                # actually reclaimed, so a log line from this CronJob always means
+                # something happened.
+                - --quiet
+              env:
+                - name: SUNLIT_RUN_ID
+                  value: "run-2026-annual"
+                # Direct, not through the pooler: this runs every 60 s, and it is also
+                # the one component that must keep working when the pooler is the
+                # thing that has failed.
+                - name: SUNLIT_COORD_HOST
+                  value: "sunlit-coordinator"
+                - name: SUNLIT_COORD_PORT
+                  value: "5432"
+              envFrom:
+                - configMapRef:
+                    name: sunlit-worker-config
+                - secretRef:
+                    name: sunlit-db-credentials
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 300m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              # readOnlyRootFilesystem needs somewhere writable: CPython and psycopg2
+              # both touch /tmp (bytecode cache, libpq scratch). Without this the
+              # reaper fails on an unhelpful permission error — and a silently dead
+              # reaper means no failure recovery at all.
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

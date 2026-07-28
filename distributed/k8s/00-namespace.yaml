@@ -9,11 +9,29 @@ metadata:
 # =============================================================================
 # ResourceQuota — a guardrail, not a limit we expect to hit.
 #
-# The fleet is intentionally allowed to be large, but a runaway `parallelism`
-# value (or a misapplied kustomize overlay) should hit a quota error rather than
-# quietly consuming an entire cluster and evicting other tenants. 50 workers x
-# 4 CPU / 8 Gi is the designed footprint; the quota is set at ~1.3x that to leave
-# room for the orchestrator and a rolling replacement without blocking.
+# A runaway `parallelism` value, or a misapplied kustomize overlay, should hit a
+# quota error rather than quietly consuming an entire cluster and evicting other
+# tenants.
+#
+# THE DESIGNED FOOTPRINT (see `python distributed/orchestrator/model.py`):
+#
+#   50 map workers   x  8 vCPU / 16 Gi  =  400 vCPU /  800 Gi
+#   10 data shards   x 16 vCPU / 128 Gi =  160 vCPU / 1280 Gi
+#    1 coordinator   x  8 vCPU /  32 Gi =    8 vCPU /   32 Gi
+#    2 pgbouncer     x  2 vCPU /   1 Gi =    4 vCPU /    2 Gi
+#   ------------------------------------------------------------
+#                                          572 vCPU / 2114 Gi
+#
+# That is a lot of RAM, and almost all of it is the shards — deliberately. Each
+# holds ~10 GB of exposure samples, so 128 Gi means a shard's entire slice of the
+# dataset sits in its page cache and the reduce phase's aggregate never touches
+# disk. It is also why the run costs only ~32 vCPU-hours: the hardware is wide, not
+# held for long.
+#
+# The quota is set ~15% above the design so a rolling replacement or one extra
+# reaper pod never blocks. Storage is counted too — ten 256Gi shard volumes plus
+# the coordinator's 32Gi — because a forgotten PVC outlives the Job that made it and
+# is the most common way a batch namespace quietly fills a cluster's disk.
 # =============================================================================
 apiVersion: v1
 kind: ResourceQuota
@@ -22,19 +40,49 @@ metadata:
   namespace: sunlightcity
 spec:
   hard:
-    requests.cpu: "220"
-    requests.memory: 460Gi
-    limits.cpu: "300"
-    limits.memory: 560Gi
+    requests.cpu: "660"
+    requests.memory: 2500Gi
+    # limits.cpu is deliberately absent, not merely large. The map workers and the
+    # database shards both run with NO CPU limit: a CFS quota would throttle exactly
+    # the burst the fleet is waiting on, and anti-affinity already gives each shard
+    # its own node. A quota on limits.cpu would force every pod to declare one.
+    limits.memory: 3000Gi
     pods: "80"
     count/jobs.batch: "20"
+    count/cronjobs.batch: "5"
+    # 10 shard volumes + 1 coordinator. A stale PVC outlives the Job that created it.
+    persistentvolumeclaims: "16"
+    requests.storage: 3Ti
 ---
 # =============================================================================
-# LimitRange — every pod gets sane defaults if a manifest forgets to set them.
+# LimitRange — sane defaults for a manifest that forgets a field.
 #
-# Without this, a container with no memory request is scheduled as "best effort"
-# and is the FIRST thing the kubelet kills under node pressure. For a worker
-# holding a 15-minute lease that is an expensive way to discover a missing field.
+# Without this, a container with no memory request is scheduled as "best effort" and
+# is the FIRST thing the kubelet kills under node pressure. For a worker holding a
+# 900 s lease, that is an expensive way to discover a missing field.
+#
+#
+# MEMORY ONLY. CPU IS DELIBERATELY ABSENT, AND THIS IS NOT AN OVERSIGHT.
+# ---------------------------------------------------------------------
+# The two pod types that matter — map workers and data shards — run with NO CPU
+# limit on purpose. A worker fans each timestep's rays across the job system's
+# threads and a shard runs one busy CPU per COPY backend; a CFS quota would throttle
+# exactly the burst the rest of the system is waiting on, and anti-affinity plus
+# topology spread already stop them oversubscribing a node.
+#
+# A LimitRange makes that impossible to express if it mentions cpu at all:
+#
+#   * `default.cpu` is applied as a LIMIT when none is set. At the previous value of
+#     "4" every map worker — which requests 8 — would have been REJECTED outright
+#     with "must be less than or equal to cpu limit", and so would every shard, which
+#     requests 16. Nothing would have scheduled.
+#   * `max.cpu` is not a safe substitute either: when a container sets no limit and
+#     no default exists, Kubernetes assigns the limit from `max`. So specifying only
+#     max would silently reintroduce the quota this design is avoiding.
+#
+# The real CPU guardrail is `requests.cpu` in the ResourceQuota above, which bounds
+# the namespace in aggregate — which is what a guardrail should do — rather than
+# throttling each pod individually.
 # =============================================================================
 apiVersion: v1
 kind: LimitRange
@@ -44,15 +92,14 @@ metadata:
 spec:
   limits:
     - type: Container
-      default:              # applied as limits when unspecified
-        cpu: "4"
+      default:              # applied as LIMITS when unspecified
         memory: 8Gi
-      defaultRequest:       # applied as requests when unspecified
-        cpu: "2"
+      defaultRequest:       # applied as REQUESTS when unspecified
+        cpu: "1"
         memory: 4Gi
       max:
-        cpu: "16"
-        memory: 32Gi
+        # Sized for the largest legitimate pod, which is a data shard.
+        memory: 128Gi
       min:
-        cpu: 250m
-        memory: 256Mi
+        cpu: 50m            # the reaper CronJob is the smallest thing here
+        memory: 64Mi

@@ -1,0 +1,596 @@
+# =============================================================================
+# THE DATABASE CLUSTER — one coordinator plus ten data shards.
+#
+# This file is the answer to the question the whole v2 rewrite exists for:
+#
+#   The schema keeps one row per (sample point, timestamp) — 1,577,374,560 of them
+#   — because the router traverses an edge as an ORDERED, DIRECTIONAL sequence and a
+#   per-edge sum cannot express which end you entered from. One PostgreSQL instance
+#   cannot absorb that from 50 concurrent producers: a COPY backend is one busy CPU,
+#   so a 16 vCPU instance sustains ~12 productive streams (~2.4M rows/s) against a
+#   fleet producing 14.8M rows/s. Six sevenths of the fleet would sit waiting.
+#
+#   So there are ten of them. `python model.py --sweep` shows what that is worth:
+#   50 workers on ONE instance finish in 15m 12s; on ten, 3m 20s.
+#
+#
+# WHY TWO KINDS OF INSTANCE AND NOT ELEVEN OF ONE
+# -----------------------------------------------
+# The coordinator holds ~200 MB — the work queue and the topology — and could
+# physically live on any shard. Keeping it apart is the point:
+#
+#   meo_tasks is a few thousand rows taking ~250,000 UPDATEs over a run (one claim,
+#   ~40 heartbeats and one completion per task), every one of them on a worker's
+#   critical path. The exposure leaves are 100 GB of append-only bulk. Co-locate
+#   them and every claim queues behind a checkpoint flushing a bulk load's dirty
+#   buffers — so claim latency degrades exactly when the fleet is busiest, which is
+#   the hardest failure mode to diagnose from outside.
+#
+# Separate instance, separate page cache, separate WAL, separate checkpointer.
+#
+#
+# A NOTE ON WHAT THIS FILE IS NOT
+# -------------------------------
+# These are plain StatefulSets running the upstream postgis image. That is the right
+# choice for a batch pipeline whose data is reproducible in three minutes: there is
+# no failover to orchestrate, no follower to promote, and a shard that dies is
+# replaced and re-run. A production OLTP deployment would want an operator
+# (CloudNativePG, Zalando, Crunchy) for automated failover, backup scheduling and
+# rolling minor-version upgrades. Reaching for one here would add a control plane
+# to manage in exchange for guarantees this workload does not need — and would make
+# the wal_level=minimal bulk profile, which is most of the write throughput,
+# awkward to express.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sunlit-pg-config
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: database
+data:
+  # Both shard profiles ship together so switching after the reduce phase is a
+  # symlink change and a restart, not a redeploy. Generate for your own hardware:
+  #   python distributed/orchestrator/pg_tune.py --role shard --profile bulk \
+  #          --ram-gb 128 --cpus 16 --workers 50 --shards 10
+  #
+  # Kept deliberately short here — the full annotated versions with the reasoning
+  # are distributed/db/postgresql.*.conf, and DEPLOYMENT.md mounts those instead for
+  # a real deployment. What is inline is what a smoke test needs.
+  shard-bulk.conf: |
+    shared_buffers = 16GB
+    effective_cache_size = 96GB
+    work_mem = 256MB
+    maintenance_work_mem = 16GB
+    max_parallel_maintenance_workers = 8
+    huge_pages = try
+
+    # THE line. COPY into a relation created in the same transaction skips WAL
+    # entirely, and every task builds its own partition leaf — so the whole ~100 GB
+    # of sample data is written without a single WAL record.
+    wal_level = minimal
+    max_wal_senders = 0
+    # RAISED, not lowered: a small max_wal_size makes checkpoints frequent, and each
+    # one both stalls every writer and re-arms full-page-image logging.
+    max_wal_size = 32GB
+    min_wal_size = 4GB
+    checkpoint_timeout = 30min
+    checkpoint_completion_target = 0.9
+    wal_compression = off
+    wal_buffers = 128MB
+
+    # Safe here ONLY because the data is reproducible: a lost commit is a lost task,
+    # which the queue re-runs. fsync stays ON — that is where the trade stops.
+    synchronous_commit = off
+    full_page_writes = on
+    fsync = on
+
+    max_connections = 100
+    max_worker_processes = 16
+    max_parallel_workers = 16
+    max_parallel_workers_per_gather = 4
+    enable_partition_pruning = on
+
+    autovacuum = on
+    autovacuum_max_workers = 4
+    autovacuum_naptime = 30s
+    autovacuum_vacuum_cost_delay = 0
+
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    log_checkpoints = on
+    log_lock_waits = on
+    log_min_duration_statement = 5000
+    log_line_prefix = '%m [%p] %q%u@%d/%a '
+    track_io_timing = on
+
+  shard-serving.conf: |
+    shared_buffers = 16GB
+    effective_cache_size = 96GB
+    work_mem = 64MB
+    maintenance_work_mem = 2GB
+    huge_pages = try
+
+    # replica, not minimal: replication, PITR and a valid base backup all become
+    # possible. That is the entire reason to switch profiles.
+    wal_level = replica
+    max_wal_senders = 10
+    max_wal_size = 4GB
+    min_wal_size = 1GB
+    checkpoint_timeout = 15min
+    wal_compression = on
+
+    synchronous_commit = on
+    full_page_writes = on
+    fsync = on
+
+    max_connections = 300
+    enable_partition_pruning = on
+    enable_partitionwise_aggregate = on
+    enable_partitionwise_join = on
+    # Routing queries are short and repetitive; JIT compilation would cost more than
+    # execution, and its cost trigger misjudges partitioned tables.
+    jit = off
+
+    autovacuum = on
+    autovacuum_vacuum_cost_delay = 2ms
+    log_checkpoints = on
+    log_min_duration_statement = 1000
+    log_line_prefix = '%m [%p] %q%u@%d/%a '
+
+  coordinator.conf: |
+    shared_buffers = 8GB
+    effective_cache_size = 24GB
+    work_mem = 32MB
+    maintenance_work_mem = 1GB
+
+    # FULL durability, unlike the shards. meo_tasks IS the record of what has been
+    # computed, so unlike a shard's contents it is not reproducible from anything.
+    wal_level = replica
+    max_wal_senders = 5
+    max_wal_size = 2GB
+    min_wal_size = 512MB
+    checkpoint_timeout = 10min
+    synchronous_commit = on
+    full_page_writes = on
+    fsync = on
+
+    max_connections = 200
+    # The federation reads ten shards through postgres_fdw. Without async_append
+    # those ten foreign scans run serially and the query costs the SUM of their
+    # latencies rather than the MAX.
+    enable_async_append = on
+    enable_partitionwise_aggregate = on
+    enable_partition_pruning = on
+    jit = off
+
+    # The most aggressive autovacuum in the deployment, and it belongs here:
+    # meo_tasks turns over ~42 row versions per task and its partial indexes drive
+    # claim latency for all 50 workers.
+    autovacuum = on
+    autovacuum_naptime = 15s
+    autovacuum_vacuum_cost_delay = 0
+
+    log_checkpoints = on
+    log_lock_waits = on
+    # A claim over 200 ms means 50 workers each waited that long. The single most
+    # valuable warning this instance can emit.
+    log_min_duration_statement = 200
+    log_line_prefix = '%m [%p] %q%u@%d/%a '
+---
+# =============================================================================
+# Headless Service for the shards.
+#
+# clusterIP: None is what gives each pod a stable DNS name:
+#     sunlit-shard-0.sunlit-shards.sunlightcity.svc.cluster.local
+#
+# That matters more here than usual. Sharding means a worker must reach ONE
+# SPECIFIC instance — the one owning its section — so a load-balancing Service
+# would be actively wrong: it would spread a section's writes across all ten and
+# every one would fail on a missing partition. The DNS name in
+# SUNLIT_SHARD_HOST_TEMPLATE resolves through this.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: sunlit-shards
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: shard
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: shard
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  # Let workers resolve a shard before its readiness probe passes. Without this a
+  # pod restarting mid-run briefly vanishes from DNS, and a worker's reconnect
+  # fails with NXDOMAIN rather than with a connection error it would retry.
+  publishNotReadyAddresses: true
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sunlit-shard
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: shard
+spec:
+  serviceName: sunlit-shards
+  replicas: 10
+  # Parallel, not OrderedReady. Shards are INDEPENDENT — there is no primary, no
+  # replication between them, and no bootstrap order. OrderedReady would start them
+  # one at a time and turn a 40-second cluster start into seven minutes for nothing.
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: shard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sunlightcity
+        app.kubernetes.io/component: shard
+    spec:
+      terminationGracePeriodSeconds: 120   # let a checkpoint finish on shutdown
+      securityContext:
+        runAsUser: 999            # 'postgres' in the postgis image
+        runAsGroup: 999
+        fsGroup: 999
+      # One shard per node. Ten instances each wanting 16 cores and their own NVMe
+      # queue depth have nothing to gain from sharing a host and a great deal to lose
+      # — two shards on one node halve each other's effective ingest, which is the
+      # exact bottleneck this cluster exists to remove.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: shard
+      containers:
+        - name: postgres
+          image: postgis/postgis:16-3.4
+          args:
+            - -c
+            - config_file=/etc/postgresql/postgresql.conf
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            # Each pod creates its OWN database, named from its ordinal, matching
+            # SUNLIT_SHARD_DB_TEMPLATE. Derived from the hostname rather than passed
+            # in, because a StatefulSet gives every replica identical env.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POSTGRES_USER
+              value: admin
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sunlit-db-credentials
+                  key: SUNLIT_DB_PASSWORD
+            # Initialised as the default DB, then the real one is created by the
+            # bootstrap hook below.
+            - name: POSTGRES_DB
+              value: postgres
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            # scram-sha-256 rather than the image default md5. The cluster is on an
+            # internal network, but md5 is deprecated and PgBouncer supports scram.
+            - name: POSTGRES_INITDB_ARGS
+              value: "--auth-host=scram-sha-256 --data-checksums"
+            # --data-checksums is worth the ~2% write cost here specifically: the
+            # bulk profile runs synchronous_commit=off, so checksums are the only
+            # thing that would catch a silently corrupted page before it is read
+            # back as exposure data.
+          resources:
+            requests:
+              cpu: "16"
+              memory: 128Gi
+            limits:
+              # No CPU limit, deliberately. A COPY backend is one busy CPU, and a
+              # CFS quota would throttle exactly the burst the fleet is waiting on;
+              # the anti-affinity rule above already guarantees this pod has the node
+              # to itself, which is a better bound than a quota.
+              memory: 128Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: pgconf
+              mountPath: /etc/postgresql
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+            - name: shm
+              mountPath: /dev/shm
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "postgres"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+      volumes:
+        - name: pgconf
+          configMap:
+            name: sunlit-pg-init
+            items:
+              - key: shard-postgresql.conf
+                path: postgresql.conf
+        - name: initdb
+          configMap:
+            name: sunlit-pg-init
+            items:
+              - key: 00-create-shard-db.sh
+                path: 00-create-shard-db.sh
+        # PostgreSQL uses POSIX shared memory for parallel query workers, and the
+        # container default of 64 MB is far too small for eight parallel maintenance
+        # workers sorting an index build. Without this, CREATE INDEX fails with
+        # "could not resize shared memory segment" partway through the reduce phase.
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # Local NVMe. A shard holds ~10 GB of samples plus indexes and WAL; 256Gi is
+        # generous headroom for a second run's partitions living alongside the first.
+        resources:
+          requests:
+            storage: 256Gi
+        # Set to your cluster's NVMe class. The default (often network-attached) will
+        # work and will cost you most of the ingest rate.
+        # storageClassName: local-nvme
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sunlit-coordinator
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: coordinator
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: coordinator
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  publishNotReadyAddresses: true
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sunlit-coordinator
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: coordinator
+spec:
+  serviceName: sunlit-coordinator
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: coordinator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sunlightcity
+        app.kubernetes.io/component: coordinator
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      # Keep the control plane off a shard's node. A shard saturating sixteen cores
+      # and its disk queue would add latency to every claim, which is the one thing
+      # separating the instances was meant to prevent.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/component
+                    operator: In
+                    values: [shard]
+      containers:
+        - name: postgres
+          image: postgis/postgis:16-3.4
+          args: ["-c", "config_file=/etc/postgresql/postgresql.conf"]
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              value: admin
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sunlit-db-credentials
+                  key: SUNLIT_DB_PASSWORD
+            - name: POSTGRES_DB
+              value: sunlit_coord
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_INITDB_ARGS
+              value: "--auth-host=scram-sha-256 --data-checksums"
+          resources:
+            requests:
+              cpu: "8"
+              memory: 32Gi
+            limits:
+              memory: 32Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: pgconf
+              mountPath: /etc/postgresql
+            - name: shm
+              mountPath: /dev/shm
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "sunlit_coord"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "sunlit_coord"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+      volumes:
+        - name: pgconf
+          configMap:
+            name: sunlit-pg-init
+            items:
+              - key: coordinator-postgresql.conf
+                path: postgresql.conf
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # The control plane plus the authoritative static geometry: ~200 MB. 32Gi is
+        # for WAL, a base backup and room to be careless in.
+        resources:
+          requests:
+            storage: 32Gi
+---
+# =============================================================================
+# Bootstrap: the postgresql.conf each role starts with, and the per-shard database.
+#
+# Kept separate from sunlit-pg-config above because these are mounted as FILES the
+# postgres process reads at startup, whereas that ConfigMap holds the profile
+# fragments an operator switches between. Splitting them means switching profiles
+# does not restart the pods that are only reading the bootstrap script.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sunlit-pg-init
+  namespace: sunlightcity
+data:
+  # The `include` is what makes the bulk/serving switch a one-line edit + restart.
+  # listen_addresses and the socket directory have to be here rather than in the
+  # profile, because the profile is generated by pg_tune.py and is deliberately
+  # about performance only.
+  shard-postgresql.conf: |
+    listen_addresses = '*'
+    port = 5432
+    unix_socket_directories = '/var/run/postgresql'
+    hba_file = '/var/lib/postgresql/data/pgdata/pg_hba.conf'
+    ident_file = '/var/lib/postgresql/data/pgdata/pg_ident.conf'
+    shared_preload_libraries = 'pg_stat_statements'
+    # Switch to shard-serving.conf after reduce_finalize.py, then restart.
+    include_if_exists = '/etc/postgresql/profile.conf'
+    # Inline fallback so a smoke test works before any profile is mounted.
+    wal_level = minimal
+    max_wal_senders = 0
+    synchronous_commit = off
+    max_wal_size = 32GB
+    shared_buffers = 4GB
+    work_mem = 64MB
+    maintenance_work_mem = 2GB
+    max_connections = 100
+    enable_partition_pruning = on
+    log_checkpoints = on
+    log_line_prefix = '%m [%p] %q%u@%d/%a '
+
+  coordinator-postgresql.conf: |
+    listen_addresses = '*'
+    port = 5432
+    unix_socket_directories = '/var/run/postgresql'
+    hba_file = '/var/lib/postgresql/data/pgdata/pg_hba.conf'
+    ident_file = '/var/lib/postgresql/data/pgdata/pg_ident.conf'
+    shared_preload_libraries = 'pg_stat_statements'
+    include_if_exists = '/etc/postgresql/profile.conf'
+    wal_level = replica
+    synchronous_commit = on
+    shared_buffers = 2GB
+    work_mem = 32MB
+    max_connections = 200
+    enable_async_append = on
+    enable_partitionwise_aggregate = on
+    autovacuum_naptime = 15s
+    autovacuum_vacuum_cost_delay = 0
+    jit = off
+    log_min_duration_statement = 200
+    log_line_prefix = '%m [%p] %q%u@%d/%a '
+
+  # Runs once, on first initdb only, inside each shard pod.
+  #
+  # The database name has to come from the pod's ORDINAL, and a StatefulSet gives
+  # every replica identical environment — so it is parsed out of the hostname, which
+  # is the one thing that differs. `sunlit-shard-7` -> `sunlit_shard_7`, matching
+  # SUNLIT_SHARD_DB_TEMPLATE and what plan_tasks.py will connect to.
+  00-create-shard-db.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    ORDINAL="${HOSTNAME##*-}"
+    DB="sunlit_shard_${ORDINAL}"
+    echo "[init] pod ${HOSTNAME} -> database ${DB}"
+
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-SQL
+      CREATE DATABASE ${DB};
+    SQL
+
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${DB}" <<-SQL
+      CREATE EXTENSION IF NOT EXISTS postgis;
+      CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+      -- The v1 geometry tables, EMPTY. Column definitions are verbatim from
+      -- db_pipeline_initializer.py, because 03_shard_schema.sql refuses to install
+      -- on an instance that cannot answer a directional query — failing at install
+      -- time beats failing on every task. plan_tasks.py --provision fills them by
+      -- binary COPY from the coordinator.
+      CREATE TABLE meo_waypoints (
+          id UUID PRIMARY KEY,
+          geom GEOMETRY(PointZ, 0));
+      CREATE TABLE meo_edges (
+          id UUID PRIMARY KEY,
+          start_wp_id UUID REFERENCES meo_waypoints(id),
+          end_wp_id UUID REFERENCES meo_waypoints(id),
+          length FLOAT,
+          sample_count INT DEFAULT 0,
+          total_tree_value FLOAT DEFAULT 0,
+          geom GEOMETRY(LineStringZ, 0));
+      CREATE TABLE meo_trees (
+          id UUID PRIMARY KEY,
+          geom GEOMETRY(PointZ, 0),
+          shade_norm FLOAT);
+      CREATE TABLE meo_sample_points (
+          id UUID PRIMARY KEY,
+          edge_id UUID REFERENCES meo_edges(id),
+          sequence_index INT,
+          distance_from_start FLOAT,
+          geom GEOMETRY(PointZ, 0),
+          tree_value FLOAT DEFAULT 0.0);
+
+      CREATE INDEX ON meo_sample_points USING GIST (geom);
+      CREATE INDEX ON meo_sample_points (edge_id, sequence_index);
+    SQL
+
+    echo "[init] ${DB} ready for 03_shard_schema.sql"
