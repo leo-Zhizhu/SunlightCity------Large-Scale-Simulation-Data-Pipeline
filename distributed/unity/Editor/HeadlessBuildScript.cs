@@ -26,10 +26,18 @@ namespace SunlightCity.Distributed.EditorTools
     /// gives a smaller image, no GPU/X11/Vulkan dependency, and no risk of a driver
     /// probe on a headless node.
     ///
-    /// Crucially, PhysX is UNAFFECTED. Physics.Raycast is a CPU BVH traversal with
-    /// no GPU involvement, so the measurement this whole pipeline depends on is
+    /// Crucially, PhysX is UNAFFECTED. Raycasting is a CPU BVH traversal with no GPU
+    /// involvement, so the measurement this whole pipeline depends on is
     /// bit-identical to a desktop build. That is the property that makes
     /// containerising this workload viable at all.
+    ///
+    /// The worker issues its rays through RaycastCommand.ScheduleBatch rather than
+    /// Physics.Raycast, so the job system's worker threads matter as much as the
+    /// main thread. Unity sizes that pool from the visible core count, which inside
+    /// a container is the CGROUP quota — so a pod requesting 8 CPU gets 7 job worker
+    /// threads, and one requesting 500m gets one. That is why the Job spec requests
+    /// whole cores rather than a fraction: a fractional request would silently
+    /// collapse the batching this pipeline's per-worker speedup depends on.
     /// </summary>
     public static class HeadlessBuildScript
     {
@@ -148,10 +156,25 @@ namespace SunlightCity.Distributed.EditorTools
             PlayerSettings.productName  = "SunlightCityWorker";
             PlayerSettings.companyName  = "SunlightCity";
 
-            // IL2CPP over Mono: 2-3x faster on the tight raycast loop, which is where
-            // essentially all worker CPU time goes. Costs build time, not runtime.
+            // IL2CPP over Mono: 2-3x faster on the tight loops that build the raycast
+            // command array and fold results into the bitset, which is where the
+            // worker's non-PhysX CPU time goes. Costs build time, not runtime.
             PlayerSettings.SetScriptingBackend(named, ScriptingImplementation.IL2CPP);
             PlayerSettings.SetIl2CppCompilerConfiguration(named, Il2CppCompilerConfiguration.Release);
+
+            // Optimise the generated C++ for speed rather than for binary size. The
+            // default balances the two, which is right for a game shipping to players
+            // over a network and wrong for a batch worker whose image is pulled once
+            // per node and then runs flat out for minutes.
+            PlayerSettings.SetIl2CppCodeGeneration(named, Il2CppCodeGeneration.OptimizeSpeed);
+
+            // Incremental GC OFF. It splits collection across frames by adding a write
+            // barrier to every reference store — a real cost paid on every frame in
+            // exchange for smoother frame times. The worker has no frame-time
+            // requirement, and its hot path is deliberately allocation-free (see
+            // SectionExposureSampler), so there is nothing for incremental collection
+            // to smooth out and the write barriers are pure overhead.
+            PlayerSettings.gcIncremental = false;
 
             // .NET Standard 2.1 keeps Npgsql 4.1.12 (netstandard2.0) loadable.
             PlayerSettings.SetApiCompatibilityLevel(named, ApiCompatibilityLevel.NET_Standard_2_0);
@@ -171,9 +194,19 @@ namespace SunlightCity.Distributed.EditorTools
             PlayerSettings.defaultScreenWidth  = 64;
             PlayerSettings.defaultScreenHeight = 64;
 
-            // Deterministic, low-overhead physics. autoSyncTransforms costs a hidden
-            // sync on every transform write; we drive the sun transform explicitly
-            // and yield a fixed update, so we do not need it.
+            // Deterministic, low-overhead physics.
+            //
+            // autoSyncTransforms off: it forces a Transform -> PhysX sync before every
+            // query, and the only transform the worker moves is the sun's — a Light,
+            // which has no collider and nothing to sync. The city's colliders never
+            // move at all. Leaving it on would pay for a scene-wide check 360 times
+            // per section-day to synchronise nothing.
+            //
+            // queriesHitTriggers off as a project-wide default, though the worker does
+            // not rely on it: SectionExposureSampler passes
+            // QueryTriggerInteraction.Ignore explicitly, so whether a trigger blocks
+            // sunlight does not depend on a global someone might change for unrelated
+            // reasons.
             Physics.autoSyncTransforms = false;
             Physics.queriesHitTriggers = false;
 

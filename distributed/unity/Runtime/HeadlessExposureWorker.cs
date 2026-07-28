@@ -2,7 +2,7 @@ using System;
 using System.Collections;
 using System.Diagnostics;
 using System.Linq;
-using Npgsql;
+using System.Runtime;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
@@ -13,23 +13,37 @@ namespace SunlightCity.Distributed
     ///
     /// LIFECYCLE
     /// ---------
-    ///   boot -> validate config -> connect -> verify run
-    ///        -> loop { claim task | drain-exit }
-    ///                  load shard -> sweep time -> flush -> promote -> complete
-    ///        -> exit 0
+    ///   boot -> validate config -> connect coordinator -> verify run
+    ///        -> load section->shard routing
+    ///        -> loop { claim (with affinity) | drain-exit }
+    ///                 load section geometry (cached)
+    ///                 sweep the window's timesteps, batched
+    ///                 hand the result to the writer thread
+    ///                 reap whatever the writer finished, complete those tasks
+    ///        -> drain the writer -> exit 0
     ///
-    /// Any unhandled failure inside a task reports the task failed and continues to
-    /// the next one. The pod only exits non-zero for problems that would affect
-    /// every task (bad config, unreachable DB, missing scene) — retrying those in
-    /// the same pod would just spin, so we let Kubernetes restart or fail the Job.
+    /// THE PIPELINE IS THE POINT
+    /// -------------------------
+    /// Raycasting a window takes ~1.8 s and writing its 261k rows takes ~1.3 s. Run
+    /// in sequence that is 3.1 s per task and 42% of the fleet's life is spent
+    /// waiting on sockets. So a finished window is handed to
+    /// <see cref="ExposureWriter"/>'s thread and the main thread immediately claims
+    /// the next task — which is why a task is COMPLETED one iteration after it is
+    /// computed, and why the loop below reaps completions separately from producing
+    /// them.
+    ///
+    /// A task is only marked done once its rows are committed. Marking it earlier
+    /// would let a crash between the two leave a task recorded as complete with no
+    /// data — the one failure this design must not have, because the completeness
+    /// check would pass and the gap would surface months later as a street with no
+    /// shade.
     ///
     /// WHY A COROUTINE AND NOT A PLAIN LOOP
     /// ------------------------------------
-    /// Physics.Raycast requires Unity's main thread, and the transform of the sun
-    /// light must be committed before a raycast observes it. Yielding
-    /// WaitForFixedUpdate between timesteps is the supported way to guarantee that
-    /// ordering. It also keeps the player responsive to SIGTERM, which matters for
-    /// graceful preemption.
+    /// The sun light's transform must be committed before a raycast observes it, and
+    /// yielding WaitForFixedUpdate is the supported way to guarantee that ordering.
+    /// It also keeps the player responsive to SIGTERM, which matters for graceful
+    /// preemption on spot nodes.
     /// </summary>
     public sealed class HeadlessExposureWorker : MonoBehaviour
     {
@@ -37,22 +51,33 @@ namespace SunlightCity.Distributed
         [SerializeField] private Light sunLight;
         [SerializeField] private SolarDataLoader solarLoader;
 
-        private WorkerConfig          _cfg;
-        private WorkQueueClient       _queue;
-        private ShardExposureCombiner _combiner;
+        private WorkerConfig           _cfg;
+        private WorkQueueClient        _queue;
+        private ShardRouter            _router;
+        private SectionGeometryCache   _geometry;
+        private SectionExposureSampler _sampler;
+        private ExposureWriter         _writer;
+
+        // Affinity hints: what working set is currently warm.
+        private int _warmSection = -1;
+        private int _warmWindow  = -1;
 
         private int  _consecutiveEmptyPolls;
+        private int  _tasksComputed;
         private int  _tasksCompleted;
+        private int  _tasksFailed;
         private long _totalRaycasts;
         private readonly Stopwatch _uptime = Stopwatch.StartNew();
 
         /// <summary>
         /// Set by SIGTERM handling. Kubernetes sends SIGTERM then waits
-        /// terminationGracePeriodSeconds before SIGKILL; we use that window to
-        /// finish the current timestep, flush, and release the lease cleanly so the
-        /// task is immediately reclaimable rather than waiting out its lease.
+        /// terminationGracePeriodSeconds before SIGKILL; we use that window to finish
+        /// the current timestep, drain the writer, and release leases cleanly so
+        /// tasks are immediately reclaimable rather than waiting out a 900 s lease.
         /// </summary>
         private volatile bool _shutdownRequested;
+
+        private const string ReadyMarkerPath = "/tmp/sunlit-ready";
 
         // =====================================================================
         // BOOT
@@ -64,6 +89,15 @@ namespace SunlightCity.Distributed
             // WaitForFixedUpdate advances predictably regardless of host speed.
             Application.runInBackground = true;
             Time.fixedDeltaTime = 0.02f;
+
+            // SustainedLowLatency asks the runtime to avoid blocking generation-2
+            // collections. The sampler is allocation-free in its steady state, so
+            // there should be nothing to collect at all — this is the belt to that
+            // braces, and it costs nothing when there is no garbage. Server GC and
+            // concurrent-GC-off are set via DOTNET_* env in the ConfigMap, because
+            // they must be in place before the runtime starts.
+            try { GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency; }
+            catch (Exception e) { Debug.LogWarning($"[Worker] could not set GC latency mode: {e.Message}"); }
 
             try
             {
@@ -85,6 +119,9 @@ namespace SunlightCity.Distributed
                 _queue = new WorkQueueClient(_cfg);
                 _queue.Connect();
                 _queue.VerifyRunCompatibility();
+
+                _router = new ShardRouter(_cfg);
+                _router.LoadRouting(_queue.Connection);
             }
             catch (Exception e)
             {
@@ -92,18 +129,27 @@ namespace SunlightCity.Distributed
                 return;
             }
 
-            _combiner = new ShardExposureCombiner(_cfg);
+            try
+            {
+                _geometry = new SectionGeometryCache(_cfg);
+                _sampler  = new SectionExposureSampler(_cfg);
+                _writer   = new ExposureWriter(_cfg, _router);
+            }
+            catch (Exception e)
+            {
+                Fatal("could not allocate worker buffers", e);
+                return;
+            }
 
             // Readiness marker for the Job's startupProbe. Written only after the
-            // scene, solar data and queue connection are all verified, so the probe
-            // distinguishes "still booting the engine and building the BVH" (which
-            // legitimately takes minutes on a cold page cache) from "hung".
+            // scene, the solar data, the coordinator connection and every persistent
+            // buffer are all in place — so the probe distinguishes "still booting the
+            // engine and building the BVH", which legitimately takes tens of seconds
+            // on a cold page cache, from "hung".
             TouchReadyMarker();
 
             StartCoroutine(WorkerLoop());
         }
-
-        private const string ReadyMarkerPath = "/tmp/sunlit-ready";
 
         private void TouchReadyMarker()
         {
@@ -118,15 +164,15 @@ namespace SunlightCity.Distributed
             {
                 // Non-fatal: the marker is an observability aid, not a correctness
                 // requirement. Losing it only means the startupProbe never passes,
-                // which the operator will see as a pod stuck in Running-not-Ready.
+                // which the operator sees as a pod stuck in Running-not-Ready.
                 Debug.LogWarning($"[Worker] could not write readiness marker: {e.Message}");
             }
         }
 
         /// <summary>
-        /// Finds and sanity-checks everything the raycast loop depends on.
-        /// Failing here rather than mid-task turns a subtle wrong-data bug into an
-        /// obvious startup crash.
+        /// Finds and sanity-checks everything the raycast loop depends on. Failing
+        /// here rather than mid-task turns a subtle wrong-data bug into an obvious
+        /// startup crash.
         /// </summary>
         private bool ResolveSceneDependencies()
         {
@@ -161,10 +207,10 @@ namespace SunlightCity.Distributed
                 return false;
             }
 
-            // Assert colliders actually exist. A headless build that shipped without
-            // baked MeshColliders raycasts against nothing and would cheerfully
-            // report the entire city as sunlit — the worst possible failure, because
-            // it is silent and the data looks plausible.
+            // Assert colliders actually exist. A headless build shipped without baked
+            // MeshColliders raycasts against nothing and would cheerfully report the
+            // entire city as sunlit — the worst possible failure, because it is silent
+            // and the data looks plausible.
             int colliderCount = UnityEngine.Object
                 .FindObjectsByType<Collider>(FindObjectsSortMode.None).Length;
             if (colliderCount == 0)
@@ -176,6 +222,14 @@ namespace SunlightCity.Distributed
 
             Debug.Log($"[Worker] scene ready: sun='{sunLight.name}', {colliderCount:N0} colliders, " +
                       $"solar data {_cfg.CityName} {_cfg.SolarYear}");
+
+            // The whole city mesh is held, not a section's worth — which is what makes
+            // seam correctness automatic rather than something the sharding has to
+            // enforce. What sectioning buys is ray COHERENCE: every ray in a task
+            // starts inside the same square kilometre, so the traversal stays within a
+            // working set bounded by the section plus its shadow halo.
+            Debug.Log($"[Worker] whole-city collider set held; per-task BVH working set is " +
+                      $"bounded by section + {_cfg.ShadowHaloMetres:F0} m halo");
             return true;
         }
 
@@ -187,16 +241,20 @@ namespace SunlightCity.Distributed
         {
             while (!_shutdownRequested)
             {
-                ExposureTask task = null;
+                // Reap first: a task the writer finished during the last window can be
+                // marked done before we go looking for more work, which releases its
+                // admission slot on the shard as early as possible.
+                ReapWriterCompletions();
 
+                ExposureTask task = null;
                 try
                 {
-                    task = _queue.TryClaim();
+                    task = _queue.TryClaim(_warmSection, _warmWindow);
                 }
                 catch (Exception e)
                 {
-                    // A claim failure is usually a transient DB blip. Back off and
-                    // retry rather than killing a pod that could still do work.
+                    // A claim failure is usually a transient coordinator blip. Back off
+                    // and retry rather than killing a pod that could still do work.
                     Debug.LogWarning($"[Worker] claim failed, backing off: {e.Message}");
                     yield return new WaitForSecondsRealtime(_cfg.EmptyQueuePollSeconds);
                     continue;
@@ -204,21 +262,32 @@ namespace SunlightCity.Distributed
 
                 if (task == null)
                 {
+                    // An empty claim means one of two very different things: the run is
+                    // finished, or every shard is at its admission cap and this worker
+                    // must wait its turn for database capacity. The second is normal, so
+                    // we require several consecutive empties before exiting.
                     _consecutiveEmptyPolls++;
 
-                    // Drain condition. Requiring several consecutive empties (rather
-                    // than exiting on the first) avoids a pod quitting during a brief
-                    // lull while peers still hold tasks that could yet fail back to
-                    // pending and need picking up.
+                    // Anything the writer still owes must be reported before we consider
+                    // the queue truly dry.
+                    if (_writer.Busy)
+                    {
+                        _writer.Drain(_cfg.TaskTimeoutSeconds * 1000);
+                        ReapWriterCompletions();
+                        _consecutiveEmptyPolls = 0;
+                        continue;
+                    }
+
                     if (_consecutiveEmptyPolls >= _cfg.MaxEmptyPolls)
                     {
-                        Debug.Log($"[Worker] queue empty for {_consecutiveEmptyPolls} consecutive polls " +
-                                  "— draining and exiting 0.");
+                        Debug.Log($"[Worker] no claimable task for {_consecutiveEmptyPolls} " +
+                                  "consecutive polls and nothing in flight — draining and exiting 0.");
                         break;
                     }
 
-                    Debug.Log($"[Worker] queue empty ({_consecutiveEmptyPolls}/{_cfg.MaxEmptyPolls}), " +
-                              $"sleeping {_cfg.EmptyQueuePollSeconds}s");
+                    Debug.Log($"[Worker] nothing claimable ({_consecutiveEmptyPolls}/" +
+                              $"{_cfg.MaxEmptyPolls}) — queue empty or every shard at its " +
+                              $"admission cap. Sleeping {_cfg.EmptyQueuePollSeconds}s.");
                     yield return new WaitForSecondsRealtime(_cfg.EmptyQueuePollSeconds);
                     continue;
                 }
@@ -227,16 +296,61 @@ namespace SunlightCity.Distributed
                 yield return ProcessTask(task);
             }
 
+            // Drain before exiting: abandoning a committed-but-unreported task would
+            // leave the coordinator to expire its lease and re-run work that already
+            // landed.
+            if (_writer.Busy)
+            {
+                Debug.Log("[Worker] draining the writer before exit …");
+                _writer.Drain(_cfg.TaskTimeoutSeconds * 1000);
+            }
+            ReapWriterCompletions();
+
             Shutdown(0);
         }
 
         /// <summary>
-        /// Executes one task end-to-end.
+        /// Marks done (or failed) every task the writer thread has finished since the
+        /// last check. Non-blocking.
+        /// </summary>
+        private void ReapWriterCompletions()
+        {
+            while (_writer.TryReapCompleted(out long taskId, out long rows, out long raycasts,
+                                            out double seconds, out string error))
+            {
+                if (error == null)
+                {
+                    // raycasts is carried through the payload rather than passed as 0:
+                    // meo_complete_task stores what it is given, so a 0 here would wipe
+                    // the value the heartbeats had been reporting and make the run's
+                    // throughput read as no work done.
+                    try { _queue.Complete(taskId, rows, raycasts); }
+                    catch (Exception e)
+                    {
+                        // The work is committed; only the bookkeeping failed. The lease
+                        // expires, the task is retried, and because the retry rebuilds the
+                        // same leaf from scratch it simply overwrites identical data.
+                        Debug.LogWarning($"[Worker] could not mark task#{taskId} complete: {e.Message}");
+                    }
+                    _tasksCompleted++;
+                    Debug.Log($"[Worker] WROTE task#{taskId}: {rows:N0} rows in {seconds:F2}s " +
+                              $"({rows / Math.Max(0.001, seconds) / 1000.0:F0}k rows/s)");
+                }
+                else
+                {
+                    _tasksFailed++;
+                    _queue.Fail(taskId, "flush: " + error);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Computes one task and hands it to the writer.
         ///
         /// Note the deliberate absence of try/catch around the whole body: C#
         /// iterators cannot yield inside a try that has a catch clause. Instead each
-        /// fallible non-yielding section is wrapped individually, and a failure sets
-        /// `failure` and falls through to a single cleanup path. This is the standard
+        /// fallible non-yielding section is wrapped individually and a failure sets
+        /// `failure`, falling through to a single reporting path. This is the standard
         /// shape for error handling in a Unity coroutine.
         /// </summary>
         private IEnumerator ProcessTask(ExposureTask task)
@@ -244,245 +358,160 @@ namespace SunlightCity.Distributed
             Debug.Log($"[Worker] START {task}");
             var taskClock = Stopwatch.StartNew();
             string failure = null;
-            long rowsWritten = 0;
 
-            // ---- 1. Load this shard's geometry -----------------------------
+            // ---- 1. Section geometry (usually already warm) -----------------
+            SectionGeometry geometry = null;
             try
             {
-                _combiner.LoadShard(_queue.Connection, task);
+                geometry = _geometry.Load(_router.ReaderConnection(task.SectionId), task.SectionId);
+                _sampler.BeginWindow(geometry, task.StepCount);
             }
             catch (Exception e)
             {
-                failure = "LoadShard: " + e.Message;
+                failure = "geometry: " + e.Message;
             }
 
-            if (failure == null && _combiner.SampleCount == 0)
+            if (failure == null && geometry.Count == 0)
             {
-                // Not an error: a shard can legitimately be empty if shard_count
-                // exceeds the number of edges. Complete it so the run can finish.
-                Debug.LogWarning($"[Worker] task#{task.TaskId} shard is empty; completing with 0 rows.");
-                SafeComplete(task, 0, 0);
-                _combiner.Reset();
+                // Not an error: a section can legitimately be empty if the topology was
+                // rebuilt after the tasks were planned. Complete it so the run can finish.
+                Debug.LogWarning($"[Worker] task#{task.TaskId} section {task.SectionId} is " +
+                                 "empty; completing with 0 rows.");
+                try { _queue.Complete(task.TaskId, 0, 0); } catch { /* lease will recover it */ }
+                _warmSection = task.SectionId;
+                _warmWindow  = task.WindowIndex;
                 yield break;
             }
 
-            // ---- 2. Create staging tables ----------------------------------
-            //
-            // Inside the same transaction as the COPY below, which is what lets
-            // wal_level=minimal skip WAL for the bulk of the data. See
-            // 03_bulk_load_tuning.sql for the exact rule being exploited.
-            NpgsqlTransaction tx = null;
-            if (failure == null)
-            {
-                try
-                {
-                    tx = _queue.Connection.BeginTransaction();
-                    ExecScalar($"SELECT meo_create_staging_edges({task.TaskId});", tx);
-                    if (task.EmitRaw)
-                        ExecScalar($"SELECT meo_create_staging_samples({task.TaskId});", tx);
-                }
-                catch (Exception e)
-                {
-                    failure = "staging setup: " + e.Message;
-                    SafeRollback(ref tx);
-                }
-            }
-
-            // ---- 3. Sweep simulated time -----------------------------------
+            // ---- 2. Sweep the window ---------------------------------------
             if (failure == null)
             {
                 float nextHeartbeat = Time.realtimeSinceStartup + _cfg.HeartbeatSeconds;
-                int stepIndex = 0;
 
-                for (int minute = task.StartMinute; minute <= task.EndMinute; minute += task.StepMinute)
+                for (int step = 0; step < task.StepCount; step++)
                 {
-                    if (_shutdownRequested)
-                    {
-                        failure = "SIGTERM received mid-task";
-                        break;
-                    }
-                    if (_queue.LeaseLost)
-                    {
-                        failure = "lease lost mid-task (task reassigned)";
-                        break;
-                    }
+                    if (_shutdownRequested) { failure = "SIGTERM received mid-task"; break; }
+                    if (_queue.LeaseLost)   { failure = "lease lost mid-task (task reassigned)"; break; }
                     if (taskClock.Elapsed.TotalSeconds > _cfg.TaskTimeoutSeconds)
                     {
-                        failure = $"task exceeded SUNLIT_TASK_TIMEOUT_SECONDS ({_cfg.TaskTimeoutSeconds}s)";
+                        failure = $"task exceeded SUNLIT_TASK_TIMEOUT_SECONDS " +
+                                  $"({_cfg.TaskTimeoutSeconds}s)";
                         break;
                     }
 
-                    // Point the sun. Elevation/azimuth come from the pre-baked
+                    // Point the sun. Elevation and azimuth come from the pre-baked
                     // ephemeris, interpolated to the exact minute.
-                    DateTime ts = task.SimDate.AddMinutes(minute);
+                    DateTime ts = task.WindowStart.AddMinutes(step * task.StepMinute);
                     var (azimuth, elevation) = solarLoader.GetPositionLerped(ts, 0f);
                     sunLight.transform.rotation = Quaternion.Euler(elevation, azimuth + 180f, 0f);
 
-                    // One physics tick so the new light transform is visible to
-                    // Physics.Raycast. Without this the first raycast of each step
-                    // would use the previous step's sun direction.
+                    // One physics tick so the new light transform is visible to the
+                    // raycast batch. Without it the first rays of each step would use the
+                    // previous step's sun direction.
                     yield return new WaitForFixedUpdate();
 
-                    // The accumulate call itself cannot throw usefully (it is pure
-                    // arithmetic + raycasts), so it is not individually wrapped.
-                    _combiner.AccumulateTimestep(stepIndex, ts, sunLight, task.EmitRaw);
-                    stepIndex++;
-
-                    // Bounded raw buffer. Flushing mid-sweep is what keeps peak RSS
-                    // flat even for a full raw run.
-                    if (task.EmitRaw && _combiner.RawBufferFull)
-                    {
-                        try
-                        {
-                            rowsWritten += _combiner.FlushRaw(_queue.Connection, task.TaskId);
-                        }
-                        catch (Exception e)
-                        {
-                            failure = "FlushRaw: " + e.Message;
-                            break;
-                        }
-                    }
+                    // Pure arithmetic plus a job-system batch; nothing here throws
+                    // usefully, so it is not individually wrapped.
+                    _sampler.AccumulateTimestep(step, sunLight);
 
                     // Heartbeat on a wall-clock schedule, not a step count: step cost
-                    // varies ~50x between midnight and noon, so a step-based interval
-                    // would heartbeat far too rarely at the expensive end of the day.
+                    // varies by ~50x between a window at dawn and one at noon, so a
+                    // step-based interval would heartbeat far too rarely at the expensive
+                    // end of the day.
                     if (Time.realtimeSinceStartup >= nextHeartbeat)
                     {
                         nextHeartbeat = Time.realtimeSinceStartup + _cfg.HeartbeatSeconds;
-                        _queue.Heartbeat(task.TaskId, _combiner.RaycastsDone);
+                        _queue.Heartbeat(task.TaskId, _sampler.RaycastsDone);
 
                         if (_cfg.VerboseLogging)
                         {
-                            float pct = 100f * stepIndex / Math.Max(1, task.StepCount);
-                            Debug.Log($"[Worker] task#{task.TaskId} {pct:F1}% " +
-                                      $"({stepIndex}/{task.StepCount} steps, " +
-                                      $"{_combiner.RaycastsDone:N0} raycasts, " +
-                                      $"{taskClock.Elapsed.TotalSeconds:F0}s)");
+                            float pct = 100f * (step + 1) / Math.Max(1, task.StepCount);
+                            Debug.Log($"[Worker] task#{task.TaskId} {pct:F0}% " +
+                                      $"({step + 1}/{task.StepCount} steps, " +
+                                      $"{_sampler.RaycastsDone:N0} rays, " +
+                                      $"{taskClock.Elapsed.TotalSeconds:F1}s)");
                         }
                     }
                 }
             }
 
-            // ---- 4. Final flush + promote ----------------------------------
+            // ---- 3. Invariant check before anything is written --------------
+            if (failure == null)
+            {
+                long sunlit  = _sampler.TotalSunlit();
+                long ceiling = _sampler.RowCount;
+
+                // You cannot have more sunlit observations than observations. A breach
+                // means the bitset indexing is wrong, which is the most dangerous class
+                // of bug here because the output would still look like exposure data.
+                if (sunlit > ceiling)
+                    failure = $"INVARIANT VIOLATION: sunlit={sunlit:N0} exceeds " +
+                              $"samples x steps={ceiling:N0}. Bitset indexing is broken.";
+            }
+
+            // ---- 4. Hand off to the writer ---------------------------------
             if (failure == null)
             {
                 try
                 {
-                    if (task.EmitRaw)
-                        rowsWritten += _combiner.FlushRaw(_queue.Connection, task.TaskId);
-
-                    rowsWritten += _combiner.FlushEdgeAggregate(
-                        _queue.Connection, task.TaskId, task.SimDate,
-                        task.StartMinute, task.StepMinute);
-
-                    // Move staged rows into the partitioned tables. Idempotent: it
-                    // deletes this task's prior output first, so a retry replaces
-                    // rather than duplicates.
-                    using (var cmd = new NpgsqlCommand(
-                        "SELECT meo_promote_staging(@task, @date, @raw);", _queue.Connection, tx))
-                    {
-                        cmd.Parameters.AddWithValue("task", task.TaskId);
-                        cmd.Parameters.AddWithValue("date", task.SimDate.Date);
-                        cmd.Parameters.AddWithValue("raw", task.EmitRaw);
-                        cmd.CommandTimeout = 0;
-                        cmd.ExecuteScalar();
-                    }
-
-                    tx.Commit();
-                    tx.Dispose();
-                    tx = null;
+                    // Blocks only if a previous flush is still in flight, which is
+                    // backpressure and means the shard cannot keep up.
+                    _writer.Enqueue(task, _sampler);
                 }
                 catch (Exception e)
                 {
-                    failure = "flush/promote: " + e.Message;
-                    SafeRollback(ref tx);
+                    failure = "enqueue: " + e.Message;
                 }
-            }
-            else
-            {
-                SafeRollback(ref tx);
             }
 
             // ---- 5. Report -------------------------------------------------
             if (failure == null)
             {
-                long sunlit = _combiner.TotalSunlit();
-                long ceiling = (long)_combiner.SampleCount * task.StepCount;
+                double secs = taskClock.Elapsed.TotalSeconds;
+                double rate = _sampler.RaycastsDone / Math.Max(0.001, secs);
+                long sunlit = _sampler.TotalSunlit();
 
-                // Invariant: you cannot have more sunlit observations than
-                // observations. A breach means the accumulator indexing is wrong.
-                if (sunlit > ceiling)
-                {
-                    failure = $"INVARIANT VIOLATION: sunlit={sunlit:N0} exceeds " +
-                              $"samples x steps={ceiling:N0}. Accumulator indexing is broken.";
-                    Debug.LogError("[Worker] " + failure);
-                    _queue.Fail(task.TaskId, failure);
-                }
-                else
-                {
-                    double secs = taskClock.Elapsed.TotalSeconds;
-                    double rate = _combiner.RaycastsDone / Math.Max(0.001, secs);
-                    _tasksCompleted++;
-                    _totalRaycasts += _combiner.RaycastsDone;
+                _tasksComputed++;
+                _totalRaycasts += _sampler.RaycastsDone;
 
-                    SafeComplete(task, rowsWritten, _combiner.RaycastsDone);
+                // The steady state is supposed to be allocation-free; this makes that
+                // checkable rather than aspirational.
+                _sampler.AssertNoGarbageCollected();
 
-                    Debug.Log($"[Worker] DONE task#{task.TaskId} in {secs:F1}s | " +
-                              $"{_combiner.RaycastsDone:N0} raycasts ({rate / 1000.0:F1}k/s) | " +
-                              $"{rowsWritten:N0} rows | " +
-                              $"sunlit {100.0 * sunlit / Math.Max(1, ceiling):F1}%");
-                }
+                Debug.Log($"[Worker] COMPUTED task#{task.TaskId} in {secs:F2}s | " +
+                          $"{_sampler.RaycastsDone:N0} rays ({rate / 1000.0:F0}k/s) | " +
+                          $"{_sampler.StepsSkipped}/{task.StepCount} steps below horizon | " +
+                          $"sunlit {100.0 * sunlit / Math.Max(1, _sampler.RowCount):F1}% | " +
+                          $"flush queued");
+
+                // Only now update the affinity hints: a failed task should not make the
+                // worker ask for more of the same.
+                _warmSection = task.SectionId;
+                _warmWindow  = task.WindowIndex;
             }
             else
             {
+                _tasksFailed++;
                 Debug.LogError($"[Worker] FAILED task#{task.TaskId}: {failure}");
                 _queue.Fail(task.TaskId, failure);
             }
-
-            _combiner.Reset();
         }
 
         // =====================================================================
-        // HELPERS
+        // SHUTDOWN
         // =====================================================================
-
-        private void ExecScalar(string sql, NpgsqlTransaction tx)
-        {
-            using var cmd = new NpgsqlCommand(sql, _queue.Connection, tx);
-            cmd.CommandTimeout = 0;
-            cmd.ExecuteScalar();
-        }
-
-        private void SafeRollback(ref NpgsqlTransaction tx)
-        {
-            if (tx == null) return;
-            try { tx.Rollback(); }
-            catch (Exception e) { Debug.LogWarning($"[Worker] rollback failed: {e.Message}"); }
-            finally { tx.Dispose(); tx = null; }
-        }
-
-        private void SafeComplete(ExposureTask task, long rows, long rays)
-        {
-            try { _queue.Complete(task.TaskId, rows, rays); }
-            catch (Exception e)
-            {
-                // The work is committed; only the bookkeeping failed. The lease will
-                // expire and the task will be retried, and because promote is
-                // idempotent the retry simply overwrites identical data.
-                Debug.LogWarning($"[Worker] could not mark task#{task.TaskId} complete: {e.Message}");
-            }
-        }
 
         /// <summary>
         /// Kubernetes sends SIGTERM on scale-down, eviction and spot reclamation.
-        /// Unity surfaces it as OnApplicationQuit. We flag it and let the loop
-        /// unwind so the lease is released promptly, instead of the task sitting
-        /// unclaimable until its lease expires.
+        /// Unity surfaces it as OnApplicationQuit. We flag it and let the loop unwind
+        /// so leases are released promptly, instead of tasks sitting unclaimable
+        /// until a 900 s lease expires.
         /// </summary>
         private void OnApplicationQuit()
         {
             if (!_shutdownRequested)
-                Debug.Log("[Worker] SIGTERM / quit received — finishing current step and releasing lease.");
+                Debug.Log("[Worker] SIGTERM / quit received — finishing the current step, " +
+                          "draining the writer, releasing leases.");
             _shutdownRequested = true;
         }
 
@@ -494,9 +523,21 @@ namespace SunlightCity.Distributed
 
         private void Shutdown(int exitCode)
         {
-            Debug.Log($"[Worker] shutting down: {_tasksCompleted} task(s), " +
-                      $"{_totalRaycasts:N0} raycasts, uptime {_uptime.Elapsed.TotalMinutes:F1} min, " +
-                      $"exit={exitCode}");
+            double mins = _uptime.Elapsed.TotalMinutes;
+            Debug.Log(
+                $"[Worker] shutting down: {_tasksComputed} computed / {_tasksCompleted} committed / " +
+                $"{_tasksFailed} failed, {_totalRaycasts:N0} rays, " +
+                $"{_writer?.TotalRowsWritten ?? 0:N0} rows, " +
+                $"geometry cache {_geometry?.HitRate:P0} hit, " +
+                $"{_router?.Reconnects ?? 0} shard reconnect(s), " +
+                $"uptime {mins:F1} min, exit={exitCode}");
+
+            // Order matters: the writer thread must stop before its connection is
+            // disposed, and the sampler's native buffers must be released explicitly
+            // because the GC does not own them.
+            _writer?.Dispose();
+            _router?.Dispose();
+            _sampler?.Dispose();
             _queue?.Dispose();
 
             // Explicit exit code is how the Kubernetes Job distinguishes a drained
@@ -504,11 +545,22 @@ namespace SunlightCity.Distributed
             Application.Quit(exitCode);
         }
 
+        /// <summary>
+        /// Last-resort teardown. OnApplicationQuit already runs Shutdown on the normal
+        /// path; this covers a domain reload in the Editor, where skipping it would
+        /// leak the persistent NativeArrays until the process exits.
+        /// </summary>
+        private void OnDestroy()
+        {
+            _writer?.Dispose();
+            _sampler?.Dispose();
+        }
+
         private static string BannerText() =>
             "\n" +
-            "  ┌────────────────────────────────────────────────────┐\n" +
-            "  │  SunlightCity — distributed exposure worker        │\n" +
-            "  │  headless Unity · map-side combiner · lease queue  │\n" +
-            "  └────────────────────────────────────────────────────┘";
+            "  ┌────────────────────────────────────────────────────────┐\n" +
+            "  │  SunlightCity — distributed exposure worker            │\n" +
+            "  │  headless Unity · batched raycasts · sharded PostGIS   │\n" +
+            "  └────────────────────────────────────────────────────────┘";
     }
 }
