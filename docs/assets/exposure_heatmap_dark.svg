@@ -1,0 +1,437 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="808" height="550" viewBox="0 0 808 550" role="img" aria-label="Heatmap of sunlit street percentage by month and hour of day. Exposure peaks at 90 percent in July at 11:00; December's best hour reaches only 51 percent.">
+<rect width="808" height="550" fill="#1a1a19"/>
+<text x="54" y="26" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="600" fill="#ffffff">Sunlit street surface, by month and hour</text>
+<text x="54" y="45" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#898781">Share of 365,133 sample points in direct sun &#183; Manhattan &#183; 3-minute simulation, sampled on the hour</text>
+<text x="77.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">05</text>
+<text x="123.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">06</text>
+<text x="169.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">07</text>
+<text x="215.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">08</text>
+<text x="261.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">09</text>
+<text x="307.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">10</text>
+<text x="353.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">11</text>
+<text x="399.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">12</text>
+<text x="445.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">13</text>
+<text x="491.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">14</text>
+<text x="537.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">15</text>
+<text x="583.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">16</text>
+<text x="629.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">17</text>
+<text x="675.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">18</text>
+<text x="721.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">19</text>
+<text x="767.0" y="58" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">20</text>
+<text x="42" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Jan</text>
+<rect x="55.0" y="67.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="67.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="123.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="147.0" y="67.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="169.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="193.0" y="67.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="215.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">21</text>
+<rect x="239.0" y="67.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="261.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">30</text>
+<rect x="285.0" y="67.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="307.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">34</text>
+<rect x="331.0" y="67.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="353.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">38</text>
+<rect x="377.0" y="67.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="399.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">41</text>
+<rect x="423.0" y="67.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="445.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">47</text>
+<rect x="469.0" y="67.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="491.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">54</text>
+<rect x="515.0" y="67.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="537.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">30</text>
+<rect x="561.0" y="67.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="583.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">15</text>
+<rect x="607.0" y="67.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="629.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="653.0" y="67.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="67.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="67.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="86.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Feb</text>
+<rect x="55.0" y="101.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="101.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="123.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="147.0" y="101.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="169.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="193.0" y="101.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="215.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">49</text>
+<rect x="239.0" y="101.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="261.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">38</text>
+<rect x="285.0" y="101.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="307.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">40</text>
+<rect x="331.0" y="101.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="353.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">43</text>
+<rect x="377.0" y="101.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="399.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">47</text>
+<rect x="423.0" y="101.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="445.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">53</text>
+<rect x="469.0" y="101.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="491.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">59</text>
+<rect x="515.0" y="101.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="537.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">39</text>
+<rect x="561.0" y="101.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="583.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">25</text>
+<rect x="607.0" y="101.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="629.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="653.0" y="101.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="101.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="101.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="120.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Mar</text>
+<rect x="55.0" y="135.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="135.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="123.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="147.0" y="135.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="169.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="193.0" y="135.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="215.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">52</text>
+<rect x="239.0" y="135.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="261.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">61</text>
+<rect x="285.0" y="135.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="307.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">52</text>
+<rect x="331.0" y="135.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="353.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">51</text>
+<rect x="377.0" y="135.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="399.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">55</text>
+<rect x="423.0" y="135.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="445.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">62</text>
+<rect x="469.0" y="135.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="491.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">62</text>
+<rect x="515.0" y="135.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="537.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">44</text>
+<rect x="561.0" y="135.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="583.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">32</text>
+<rect x="607.0" y="135.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="629.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">21</text>
+<rect x="653.0" y="135.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="135.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="135.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="154.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Apr</text>
+<rect x="55.0" y="169.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="169.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="123.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="147.0" y="169.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="169.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">32</text>
+<rect x="193.0" y="169.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="215.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">51</text>
+<rect x="239.0" y="169.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="261.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">79</text>
+<rect x="285.0" y="169.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="307.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">70</text>
+<rect x="331.0" y="169.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="353.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">65</text>
+<rect x="377.0" y="169.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="399.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">68</text>
+<rect x="423.0" y="169.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="445.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">72</text>
+<rect x="469.0" y="169.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="491.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">63</text>
+<rect x="515.0" y="169.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="537.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">49</text>
+<rect x="561.0" y="169.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="583.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">39</text>
+<rect x="607.0" y="169.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="629.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">30</text>
+<rect x="653.0" y="169.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="169.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="169.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="188.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">May</text>
+<rect x="55.0" y="203.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="203.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="123.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">27</text>
+<rect x="147.0" y="203.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="169.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">39</text>
+<rect x="193.0" y="203.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="215.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">54</text>
+<rect x="239.0" y="203.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="261.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">79</text>
+<rect x="285.0" y="203.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="307.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">85</text>
+<rect x="331.0" y="203.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="353.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">79</text>
+<rect x="377.0" y="203.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="399.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">80</text>
+<rect x="423.0" y="203.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="445.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">78</text>
+<rect x="469.0" y="203.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="491.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">66</text>
+<rect x="515.0" y="203.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="537.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">54</text>
+<rect x="561.0" y="203.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="583.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">46</text>
+<rect x="607.0" y="203.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="629.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">37</text>
+<rect x="653.0" y="203.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="675.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">25</text>
+<rect x="699.0" y="203.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="203.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="222.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Jun</text>
+<rect x="55.0" y="237.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="237.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="123.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">30</text>
+<rect x="147.0" y="237.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="169.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">42</text>
+<rect x="193.0" y="237.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="215.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">54</text>
+<rect x="239.0" y="237.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="261.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">74</text>
+<rect x="285.0" y="237.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="307.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">89</text>
+<rect x="331.0" y="237.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="353.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">89</text>
+<rect x="377.0" y="237.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="399.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">88</text>
+<rect x="423.0" y="237.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="445.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">83</text>
+<rect x="469.0" y="237.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="491.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">71</text>
+<rect x="515.0" y="237.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="537.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">60</text>
+<rect x="561.0" y="237.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="583.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">52</text>
+<rect x="607.0" y="237.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="629.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">44</text>
+<rect x="653.0" y="237.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="675.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">35</text>
+<rect x="699.0" y="237.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="237.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="256.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Jul</text>
+<rect x="55.0" y="271.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="271.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="123.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">30</text>
+<rect x="147.0" y="271.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="169.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">41</text>
+<rect x="193.0" y="271.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="215.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">52</text>
+<rect x="239.0" y="271.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="261.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">71</text>
+<rect x="285.0" y="271.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="307.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">88</text>
+<rect x="331.0" y="271.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="353.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">90</text>
+<rect x="377.0" y="271.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="399.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">89</text>
+<rect x="423.0" y="271.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="445.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">85</text>
+<rect x="469.0" y="271.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="491.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">73</text>
+<rect x="515.0" y="271.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="537.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">62</text>
+<rect x="561.0" y="271.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="583.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">54</text>
+<rect x="607.0" y="271.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="629.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">46</text>
+<rect x="653.0" y="271.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="675.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">37</text>
+<rect x="699.0" y="271.0" width="44" height="32" rx="4" fill="#184f95"/>
+<text x="721.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">2</text>
+<rect x="745.0" y="271.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="290.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Aug</text>
+<rect x="55.0" y="305.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="305.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="123.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">26</text>
+<rect x="147.0" y="305.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="169.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">39</text>
+<rect x="193.0" y="305.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="215.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">51</text>
+<rect x="239.0" y="305.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="261.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">73</text>
+<rect x="285.0" y="305.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="307.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">86</text>
+<rect x="331.0" y="305.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="353.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">83</text>
+<rect x="377.0" y="305.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="399.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">83</text>
+<rect x="423.0" y="305.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="445.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">81</text>
+<rect x="469.0" y="305.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="491.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">70</text>
+<rect x="515.0" y="305.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="537.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">58</text>
+<rect x="561.0" y="305.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="583.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">49</text>
+<rect x="607.0" y="305.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="629.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">41</text>
+<rect x="653.0" y="305.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="675.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">29</text>
+<rect x="699.0" y="305.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="305.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="324.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Sep</text>
+<rect x="55.0" y="339.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="339.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="123.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">20</text>
+<rect x="147.0" y="339.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="169.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">35</text>
+<rect x="193.0" y="339.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="215.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">53</text>
+<rect x="239.0" y="339.0" width="44" height="32" rx="4" fill="#cde2fb"/>
+<text x="261.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">80</text>
+<rect x="285.0" y="339.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="307.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">75</text>
+<rect x="331.0" y="339.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="353.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">70</text>
+<rect x="377.0" y="339.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="399.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">72</text>
+<rect x="423.0" y="339.0" width="44" height="32" rx="4" fill="#b7d3f6"/>
+<text x="445.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">74</text>
+<rect x="469.0" y="339.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="491.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">63</text>
+<rect x="515.0" y="339.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="537.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">50</text>
+<rect x="561.0" y="339.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="583.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">41</text>
+<rect x="607.0" y="339.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="629.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">32</text>
+<rect x="653.0" y="339.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="339.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="339.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="358.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Oct</text>
+<rect x="55.0" y="373.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="373.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="123.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="147.0" y="373.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="169.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">31</text>
+<rect x="193.0" y="373.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="215.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">69</text>
+<rect x="239.0" y="373.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="261.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">65</text>
+<rect x="285.0" y="373.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="307.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">56</text>
+<rect x="331.0" y="373.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="353.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">56</text>
+<rect x="377.0" y="373.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="399.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">61</text>
+<rect x="423.0" y="373.0" width="44" height="32" rx="4" fill="#9ec5f4"/>
+<text x="445.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">67</text>
+<rect x="469.0" y="373.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="491.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">56</text>
+<rect x="515.0" y="373.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="537.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">41</text>
+<rect x="561.0" y="373.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="583.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">31</text>
+<rect x="607.0" y="373.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="629.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">19</text>
+<rect x="653.0" y="373.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="373.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="373.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="392.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Nov</text>
+<rect x="55.0" y="407.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="407.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="123.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="147.0" y="407.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="169.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">27</text>
+<rect x="193.0" y="407.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="215.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">47</text>
+<rect x="239.0" y="407.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="261.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">43</text>
+<rect x="285.0" y="407.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="307.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">44</text>
+<rect x="331.0" y="407.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="353.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">46</text>
+<rect x="377.0" y="407.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="399.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">52</text>
+<rect x="423.0" y="407.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="445.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">60</text>
+<rect x="469.0" y="407.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="491.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">50</text>
+<rect x="515.0" y="407.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="537.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">33</text>
+<rect x="561.0" y="407.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="583.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">21</text>
+<rect x="607.0" y="407.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="629.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="653.0" y="407.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="407.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="407.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="426.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="42" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" fill="#ffffff" text-anchor="end">Dec</text>
+<rect x="55.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="77.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="101.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="123.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="147.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="169.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="193.0" y="441.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="215.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">27</text>
+<rect x="239.0" y="441.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="261.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">33</text>
+<rect x="285.0" y="441.0" width="44" height="32" rx="4" fill="#3987e5"/>
+<text x="307.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">37</text>
+<rect x="331.0" y="441.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="353.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">40</text>
+<rect x="377.0" y="441.0" width="44" height="32" rx="4" fill="#5598e7"/>
+<text x="399.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">45</text>
+<rect x="423.0" y="441.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="445.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">50</text>
+<rect x="469.0" y="441.0" width="44" height="32" rx="4" fill="#86b6ef"/>
+<text x="491.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">51</text>
+<rect x="515.0" y="441.0" width="44" height="32" rx="4" fill="#256abf"/>
+<text x="537.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">28</text>
+<rect x="561.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="583.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="607.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="629.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="653.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="675.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="699.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="721.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<rect x="745.0" y="441.0" width="44" height="32" rx="4" fill="#282826"/>
+<text x="767.0" y="460.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">·</text>
+<text x="54" y="511" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" fill="#898781">% sunlit</text>
+<rect x="110" y="500" width="40" height="14" rx="3" fill="#282826"/>
+<text x="130.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle">night</text>
+<rect x="160" y="500" width="40" height="14" rx="3" fill="#184f95"/>
+<text x="160.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">0</text>
+<rect x="202" y="500" width="40" height="14" rx="3" fill="#256abf"/>
+<text x="202.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">15</text>
+<rect x="244" y="500" width="40" height="14" rx="3" fill="#3987e5"/>
+<text x="244.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">30</text>
+<rect x="286" y="500" width="40" height="14" rx="3" fill="#5598e7"/>
+<text x="286.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">40</text>
+<rect x="328" y="500" width="40" height="14" rx="3" fill="#86b6ef"/>
+<text x="328.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">50</text>
+<rect x="370" y="500" width="40" height="14" rx="3" fill="#9ec5f4"/>
+<text x="370.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">60</text>
+<rect x="412" y="500" width="40" height="14" rx="3" fill="#b7d3f6"/>
+<text x="412.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">70</text>
+<rect x="454" y="500" width="40" height="14" rx="3" fill="#cde2fb"/>
+<text x="454.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">80</text>
+<text x="494.0" y="528" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">100</text>
+</svg>
