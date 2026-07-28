@@ -1,0 +1,136 @@
+# =============================================================================
+# Stage image: compiles the headless Linux worker from the Unity project.
+#
+# Kept separate from the runtime image (Dockerfile.worker) on purpose. The Unity
+# Editor image is ~5-10 GB and needs a licence at build time; shipping that to 50
+# pods would be absurd. This produces a build ARTIFACT which the runtime image
+# then copies in.
+#
+# USAGE
+#   # 1. Build the player (needs a Unity licence — see LICENCE ACTIVATION below)
+#   docker build -f distributed/docker/Dockerfile.build \
+#       --build-arg UNITY_VERSION=2022.3.62f1 \
+#       -t sunlightcity/builder:local \
+#       --secret id=unity_license,src=$HOME/.local/share/unity3d/Unity/Unity_lic.ulf \
+#       /path/to/SunlightCityUnityProject
+#
+#   # 2. Extract the built player
+#   docker create --name extract sunlightcity/builder:local
+#   docker cp extract:/build ./build
+#   docker rm extract
+#
+#   # 3. Build the slim runtime image around it
+#   docker build -f distributed/docker/Dockerfile.worker -t sunlightcity/worker:v1 .
+#
+# The Unity project itself is NOT in this git repo (it is ~1 GB — see the README
+# for the Drive link). Point the build context at your extracted project.
+# =============================================================================
+
+# unityci/editor is the de-facto community image with the Editor + Linux IL2CPP
+# module preinstalled. Pin the exact editor version: a mismatch against the
+# project's ProjectVersion.txt triggers an interactive upgrade prompt that hangs
+# a batchmode build forever.
+ARG UNITY_VERSION=2022.3.62f1
+ARG UNITY_IMAGE=unityci/editor:ubuntu-${UNITY_VERSION}-linux-il2cpp-3
+
+FROM ${UNITY_IMAGE} AS builder
+
+ARG UNITY_VERSION
+ENV UNITY_PROJECT=/project \
+    BUILD_OUTPUT=/build \
+    # Never let a build block on a prompt.
+    DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /project
+
+# ---- Project sources --------------------------------------------------------
+# Copy the manifest first so dependency resolution caches independently of
+# source churn.
+COPY Packages/manifest.json Packages/packages-lock.json* /project/Packages/
+COPY ProjectSettings/ /project/ProjectSettings/
+
+# Then everything else. Library/ is excluded via .dockerignore — it is a local
+# cache that would add gigabytes and be regenerated anyway.
+COPY Assets/ /project/Assets/
+
+# ---- Worker sources ---------------------------------------------------------
+# The distributed worker scripts live in this repo, not the Unity package, so the
+# package on Drive stays the stable artifact and the code stays reviewable in git.
+COPY distributed/unity/Runtime/ /project/Assets/Scripts/Distributed/
+COPY distributed/unity/Editor/  /project/Assets/Editor/Distributed/
+
+# ---- Npgsql ------------------------------------------------------------------
+# Must be present as a managed DLL under Assets/Plugins. 4.1.12 is pinned: later
+# majors target framework features Unity's runtime does not provide.
+COPY Assets/Plugins/Npgsql/ /project/Assets/Plugins/Npgsql/
+
+# =============================================================================
+# LICENCE ACTIVATION
+#
+# Unity requires activation even for batchmode builds. Three options, in
+# decreasing order of preference for CI:
+#
+#   1. Float a licence file via BuildKit secret (shown here). The secret is
+#      mounted only for this RUN layer and never persists in the image.
+#   2. UNITY_SERIAL + UNITY_EMAIL/PASSWORD env for a Pro seat.
+#      NOTE: always run `unity-editor -returnlicense` afterwards or the seat
+#      stays consumed by a dead container.
+#   3. Personal licence: activate once on a host and mount ~/.local/share/unity3d.
+#
+# ASSERTION (not verified here — no licence in this environment): a Personal
+# licence is sufficient for a headless Linux server build. Unity restricts
+# Personal by revenue, not by build target.
+# =============================================================================
+RUN --mount=type=secret,id=unity_license,target=/tmp/Unity_lic.ulf,required=false \
+    set -eux; \
+    mkdir -p /usr/share/unity3d/config; \
+    if [ -f /tmp/Unity_lic.ulf ]; then \
+        echo "Using mounted licence file"; \
+        cp /tmp/Unity_lic.ulf /usr/share/unity3d/config/Unity_lic.ulf; \
+    elif [ -n "${UNITY_SERIAL:-}" ]; then \
+        echo "Activating with serial"; \
+        unity-editor -batchmode -nographics -quit -logFile /dev/stdout \
+            -serial "${UNITY_SERIAL}" \
+            -username "${UNITY_EMAIL}" -password "${UNITY_PASSWORD}"; \
+    else \
+        echo "WARNING: no licence supplied; the build step below will fail." >&2; \
+    fi
+
+# ---- Build -------------------------------------------------------------------
+# -nographics: no GPU/X11 on a build node.
+# -logFile /dev/stdout: surface the build log to `docker build` output; Unity
+#   otherwise writes to a file inside the container that nobody ever reads.
+# The script calls EditorApplication.Exit(1) on failure, so a broken build fails
+# the docker layer instead of silently producing an empty image.
+RUN set -eux; \
+    unity-editor \
+        -batchmode \
+        -nographics \
+        -quit \
+        -projectPath /project \
+        -executeMethod SunlightCity.Distributed.EditorTools.HeadlessBuildScript.BuildLinuxServer \
+        -logFile /dev/stdout \
+        -buildTarget Linux64
+
+# Release the seat if we consumed one (best-effort; never fail the build on it).
+RUN if [ -n "${UNITY_SERIAL:-}" ]; then \
+        unity-editor -batchmode -nographics -quit -returnlicense -logFile /dev/stdout || true; \
+    fi
+
+# ---- Collect -----------------------------------------------------------------
+RUN set -eux; \
+    mkdir -p ${BUILD_OUTPUT}; \
+    cp -r /project/build/linux-server/. ${BUILD_OUTPUT}/; \
+    chmod +x ${BUILD_OUTPUT}/SunlightCityWorker; \
+    echo "--- build artifact ---"; \
+    ls -la ${BUILD_OUTPUT}; \
+    du -sh ${BUILD_OUTPUT}
+
+# Fail loudly if StreamingAssets did not make it in — a worker without its solar
+# ephemeris starts fine and then fails every single task.
+RUN test -d ${BUILD_OUTPUT}/SunlightCityWorker_Data/StreamingAssets/SolarData \
+    || (echo "FATAL: StreamingAssets/SolarData missing from build" >&2; exit 1)
+
+# Final stage exists only so `docker cp` has a tiny thing to copy from.
+FROM scratch AS artifact
+COPY --from=builder /build /build

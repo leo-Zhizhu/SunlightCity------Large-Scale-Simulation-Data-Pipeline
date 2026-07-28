@@ -1,0 +1,117 @@
+# =============================================================================
+# Runtime image for the headless exposure worker.
+#
+# Design goal: the smallest image that can run an IL2CPP Unity server player and
+# open a TCP connection. Nothing else. No Editor, no graphics stack, no shell
+# tooling beyond what the entrypoint needs.
+#
+# Why this matters at 50 pods: every node must pull this image before any work
+# starts. A 3 GB image on a 50-node cold start is minutes of pure latency before
+# the first raycast; a ~400 MB image is seconds.
+#
+# BASE IMAGE CHOICE — ubuntu:22.04, not alpine or distroless
+# ----------------------------------------------------------
+# * alpine is musl-libc. Unity's IL2CPP player is linked against glibc and will
+#   not run on musl. This is not a tuning question, it simply does not work.
+# * distroless has no shell, and the entrypoint needs one to marshal env vars and
+#   trap signals. The security win is also small here: the worker is a batch job
+#   on an internal network with no inbound listener.
+# * ubuntu:22.04 matches what unityci/editor builds against, so the glibc /
+#   libstdc++ ABI is guaranteed compatible.
+# =============================================================================
+
+FROM ubuntu:22.04
+
+LABEL org.opencontainers.image.title="SunlightCity exposure worker" \
+      org.opencontainers.image.description="Headless Unity worker computing solar exposure over a 3D city, sharded by edge" \
+      org.opencontainers.image.source="https://github.com/leo-Zhizhu/SunlightCity------Large-Scale-Simulation-Data-Pipeline"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    # Unity reads these; setting them avoids a locale warning per pod and, more
+    # importantly, guarantees '.' as the decimal separator in any framework-level
+    # number formatting. A comma-decimal locale would corrupt the CSV we COPY.
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# -----------------------------------------------------------------------------
+# Runtime dependencies. Every package here is required; the list was derived by
+# `ldd`-ing an IL2CPP Linux server player, not copied from a template.
+#
+#   libc6, libstdc++6  — IL2CPP output links against both
+#   zlib1g             — Unity asset bundle decompression
+#   libgcc-s1          — stack unwinding for managed exceptions
+#   ca-certificates    — TLS trust store, for sslmode=require to a managed PG
+#   tzdata             — DateTime handling; without it the worker cannot resolve
+#                        any zone and the ephemeris index would be wrong
+#   libicu70           — .NET globalization. Alternative is
+#                        DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1, but invariant
+#                        mode changes string comparison semantics; installing ICU
+#                        is 30 MB and avoids that class of surprise entirely.
+#
+# NOT installed: any libGL / libX11 / libvulkan. The Server subtarget player has
+# no renderer, so these would be dead weight. If the worker ever fails with a
+# missing GL symbol, that means it was built with the wrong subtarget.
+# -----------------------------------------------------------------------------
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        libc6 \
+        libstdc++6 \
+        libgcc-s1 \
+        zlib1g \
+        ca-certificates \
+        tzdata \
+        libicu70; \
+    rm -rf /var/lib/apt/lists/*; \
+    # Non-root. The worker needs no privileges: it reads its own files and opens
+    # one outbound TCP connection.
+    groupadd --gid 10001 sunlit; \
+    useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin sunlit
+
+WORKDIR /app
+
+# -----------------------------------------------------------------------------
+# The built player, produced by Dockerfile.build and extracted to ./build.
+# Copied as a single layer since it changes as a unit.
+# -----------------------------------------------------------------------------
+COPY --chown=sunlit:sunlit build/ /app/
+
+COPY --chown=sunlit:sunlit distributed/docker/entrypoint.sh /app/entrypoint.sh
+
+RUN set -eux; \
+    chmod +x /app/entrypoint.sh /app/SunlightCityWorker; \
+    # Fail the image build rather than every pod: verify the player and its
+    # ephemeris are actually present.
+    test -x /app/SunlightCityWorker; \
+    test -d /app/SunlightCityWorker_Data; \
+    test -d /app/SunlightCityWorker_Data/StreamingAssets/SolarData; \
+    echo "image contents:"; du -sh /app; ls -la /app
+
+USER sunlit
+
+# -----------------------------------------------------------------------------
+# Defaults. Everything is overridable by the Kubernetes ConfigMap; these exist so
+# `docker run` works for a local smoke test without a wall of -e flags.
+# -----------------------------------------------------------------------------
+ENV SUNLIT_DB_HOST=postgres \
+    SUNLIT_DB_PORT=5432 \
+    SUNLIT_DB_NAME=city_data \
+    SUNLIT_DB_USER=admin \
+    SUNLIT_LEASE_SECONDS=900 \
+    SUNLIT_HEARTBEAT_SECONDS=30 \
+    SUNLIT_EMPTY_POLL_SECONDS=10 \
+    SUNLIT_MAX_EMPTY_POLLS=6 \
+    SUNLIT_GLOBAL_ELEVATION=-112.0 \
+    SUNLIT_SUN_ANGLE_THRESHOLD=5.0 \
+    SUNLIT_CITY=Manhattan \
+    SUNLIT_SOLAR_YEAR=2026 \
+    SUNLIT_EMIT_RAW=false \
+    SUNLIT_COPY_BATCH_ROWS=250000 \
+    SUNLIT_TASK_TIMEOUT_SECONDS=3600 \
+    SUNLIT_VERBOSE=false
+
+# No HEALTHCHECK: this is a batch Job, not a service. Liveness is expressed
+# through the work queue's lease heartbeat, which is a far better signal than a
+# process-alive probe — it proves the worker is making progress, not merely running.
+
+ENTRYPOINT ["/app/entrypoint.sh"]
