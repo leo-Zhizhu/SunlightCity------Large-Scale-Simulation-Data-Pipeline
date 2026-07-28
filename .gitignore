@@ -8,8 +8,19 @@ SunlightCity Unity Package.zip
 # Redundant export of SetUp Guide.md — the Markdown file is the source of truth.
 *.md.docx
 
-# Database dumps and backups
+# Database dumps and backups.
+#
+# `*.sql` here is about DUMPS, not about schema. It was silently excluding the
+# entire distributed/db/ layer — the partitioned schema, the work queue, the leaf
+# lifecycle, the federation — so those files existed locally and were absent from
+# every clone. The negation below is deliberate and load-bearing: schema is source
+# code and belongs in git; a 100 GB pg_dump does not.
+#
+# Git applies these in order, and a negation cannot resurrect a file whose PARENT
+# DIRECTORY is excluded — hence the explicit path rather than a bare `!*.sql`.
 *.sql
+!distributed/db/*.sql
+!distributed/db/tests/*.sql
 *.sql.gz
 *.dump
 db_export/
