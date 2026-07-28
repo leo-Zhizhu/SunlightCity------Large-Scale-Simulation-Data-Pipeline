@@ -95,6 +95,12 @@ def initialize_database():
     """)
 
     # meo_sample_points
+    #
+    # sequence_index and distance_from_start are not bookkeeping. They are what make an
+    # edge's samples an ORDERED SERIES WITH A DIRECTION, which is the whole basis of the
+    # directional cost query downstream (meo_edge_directional_cost, see
+    # distributed/db/03_shard_schema.sql). Without them meo_exposure_samples below would
+    # be an unordered bag of booleans and a per-edge sum really would be sufficient.
     cur.execute("""
         CREATE TABLE meo_sample_points (
             id UUID PRIMARY KEY,
@@ -106,10 +112,23 @@ def initialize_database():
         );
     """)
 
-    # meo_exposure_samples — the raw simulation output and by far the largest table
-    # (~1.57 billion rows / ~110 GB for a 12-day annual sweep). Intentionally has no primary key:
-    # it is append-only via COPY, and a unique index at this volume would dominate insert cost.
-    # Resumability is handled by the exporter querying existing ids per timestamp instead.
+    # meo_exposure_samples — THE PRODUCT of the whole pipeline, and by far the largest
+    # table (~1.577 billion rows / ~110 GB for a 12-day annual sweep).
+    #
+    # It is not an intermediate. A walker entering a 400 m street at 16:00 reaches the
+    # sample 200 m in some two and a half minutes later, by which time the shadow has
+    # moved — so walking east and walking west sample DIFFERENT (sample, time) pairs
+    # against the same advancing clock, and the two costs genuinely differ. Both
+    # directions cross the same samples, so a per-edge sum is identical for them; the
+    # difference exists only in the ordered series. See docs/V1_PIPELINE.md.
+    #
+    # v2 keeps this schema exactly, column for column, and spreads the same rows across
+    # ten PostgreSQL instances rather than shrinking them. Keeping them is the constraint
+    # that forces the entire distributed design.
+    #
+    # Intentionally has no primary key: it is append-only via COPY, and a unique index at
+    # this volume would dominate insert cost. Resumability is handled by the exporter
+    # querying existing ids per timestamp instead.
     cur.execute("""
         CREATE TABLE meo_exposure_samples (
             sample_point_id UUID REFERENCES meo_sample_points(id),
@@ -119,9 +138,15 @@ def initialize_database():
         CREATE INDEX IF NOT EXISTS idx_meo_exp_samples_sample_id ON meo_exposure_samples(sample_point_id);
     """)
 
-    # meo_exposure_edges — server-side aggregation of the above, collapsing per-sample booleans
-    # into one sunlit_sum per (edge, timestamp). This is the table the routing search actually
-    # reads: ~2 GB instead of ~110 GB, which is what makes edge-cost lookups cheap at query time.
+    # meo_exposure_edges — a DERIVED CONVENIENCE INDEX over the above, collapsing
+    # per-sample booleans into one sunlit_sum per (edge, timestamp). ~2 GB instead of
+    # ~110 GB, which is what makes the Pareto search's coarse "how sunlit is this edge
+    # right now" objective an O(1) lookup.
+    #
+    # It answers that question and no other. It cannot answer "walked eastward from this
+    # end, entering at 14:12, how many seconds in sun and what is the longest unbroken
+    # stretch", because summing threw away the order. Both questions have consumers, so
+    # both tables exist — and this is the one that can always be rebuilt from the other.
     cur.execute("""
         CREATE TABLE meo_exposure_edges (
             edge_id UUID REFERENCES meo_edges(id),

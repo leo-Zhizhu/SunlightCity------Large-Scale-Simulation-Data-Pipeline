@@ -213,6 +213,22 @@ namespace ShadowAware.Engines
         /// * <b>Boolean early-out.</b> We only need "hit anything?", so the raycast returns on
         ///   the first BVH intersection instead of sorting all hits.
         /// </summary>
+        /// <summary>
+        /// The boolean direct-beam shadow test — one raycast toward the sun.
+        ///
+        /// The threshold check is a CORRECTNESS fix, not an optimisation. eulerAngles is
+        /// [0, 360), so a sun 10 deg below the horizon reads as 350: hence the two-sided
+        /// test. Near the horizon a ray must cross kilometres of city, where float
+        /// precision degrades and the ray can escape the mesh entirely and falsely report
+        /// SUNLIT — the worst possible failure, because it is silent and the data looks
+        /// plausible. Declaring those steps shadowed is both cheaper and closer to the truth.
+        ///
+        /// It also has a consequence the distributed pipeline depends on heavily: because
+        /// the sun's elevation is never allowed below `threshold`, the longest possible
+        /// shadow is bounded at H/tan(threshold) — 200 m / tan 5 deg = 2,286 m. That exact
+        /// bound is what makes v2's per-section tasks independent rather than merely
+        /// approximately so. See docs/ARCHITECTURE.md.
+        /// </summary>
         public bool IsInShadow(Vector3 pos, Light sun, LayerMask caster, LayerMask ground, float elevation, float threshold)
         {
             if (!sun) return false;
