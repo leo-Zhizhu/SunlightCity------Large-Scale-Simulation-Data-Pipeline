@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Runs the shard schema self-test end to end against a throwaway database.
+# Runs the schema and queue self-tests end to end against a throwaway database.
 #
 #   distributed/db/tests/run_selftest.sh                    # local postgres
 #   PGHOST=... PGUSER=admin PGPASSWORD=... ./run_selftest.sh # remote
@@ -71,14 +71,26 @@ psql_file "$DB_DIR/03_shard_schema.sql" >/dev/null
 echo "==> 05_post_load_indexes.sql"
 psql_file "$DB_DIR/05_post_load_indexes.sql" >/dev/null
 
-echo "==> assertions"
-# The self-test drops the FK from meo_sample_points to meo_edges' rows by inserting
-# edge ids that have no meo_edges row, so the constraint has to go first. Real
-# shards keep it; this is a fixture concession, stated rather than hidden.
+# The coordinator's topology and queue live in the same scratch database here. On a
+# real deployment they are on a different INSTANCE from the shard schema — 04
+# refuses to tune a database holding both, precisely to stop that happening by
+# accident. Co-locating them is safe for a test that only calls functions.
+echo "==> 01_cluster_topology.sql + 02_work_queue.sql"
+psql_file "$DB_DIR/01_cluster_topology.sql" >/dev/null
+psql_file "$DB_DIR/02_work_queue.sql" >/dev/null
+
+echo "==> shard schema assertions"
+# The shard self-test inserts sample points for synthetic edge ids that have no
+# meo_edges row, so the foreign key has to go first. Real shards keep it; this is a
+# fixture concession, stated rather than hidden.
 psql_run -d "$DB" -qc \
     "ALTER TABLE meo_sample_points DROP CONSTRAINT meo_sample_points_edge_id_fkey" >/dev/null
 
 psql_file "$HERE/shard_selftest.sql"
+
+echo
+echo "==> queue semantics assertions"
+psql_file "$HERE/queue_selftest.sql"
 
 echo
 echo "==> self-test complete"
