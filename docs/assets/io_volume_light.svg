@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="300" viewBox="0 0 860 300" role="img" aria-label="Bytes written to PostgreSQL per annual run: 110 GB before the map-side combiner versus 2.09 GB after, a 53 times reduction.">
+<rect width="860" height="300" fill="#fcfcfb"/>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">Bytes written to PostgreSQL, per annual run</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">The map-side combiner aggregates before the wire, not after it.</text>
+<text x="820.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MEASURED</text>
+<text x="194.0" y="115.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="end" style="font-variant-numeric:tabular-nums">v1  single node</text>
+<text x="194.0" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">raw per-sample booleans</text>
+<rect x="210.0" y="96.0" width="520.0" height="34.0" rx="4" fill="#f4f4f1"/>
+<rect x="210.0" y="96.0" width="520.0" height="34.0" rx="4" fill="#898781"/>
+<text x="718.0" y="119.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="end" style="font-variant-numeric:tabular-nums">110 GB</text>
+<text x="194.0" y="185.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="end" style="font-variant-numeric:tabular-nums">v2  combiner</text>
+<text x="194.0" y="200.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">per-edge aggregates</text>
+<rect x="210.0" y="166.0" width="520.0" height="34.0" rx="4" fill="#f4f4f1"/>
+<rect x="210.0" y="166.0" width="9.9" height="34.0" rx="4" fill="#256abf"/>
+<text x="229.9" y="189.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">2.09 GB</text>
+<line x1="219.9" y1="150.0" x2="730.0" y2="150.0" stroke="#c2410c" stroke-width="1.5" stroke-linecap="butt" stroke-dasharray="3 3"/>
+<text x="470.0" y="144.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#c2410c" text-anchor="middle" style="font-variant-numeric:tabular-nums">53x less written</text>
+<rect x="40.0" y="228.0" width="780.0" height="48.0" rx="6" fill="#f4f4f1"/>
+<text x="56.0" y="248.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">98% of what the single-node pipeline sent to the database was discarded by the very next step.</text>
+<text x="56.0" y="265.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Sharding by edge (not by sample point) makes each worker's per-edge sum final, so aggregating locally is exact.</text>
+</svg>

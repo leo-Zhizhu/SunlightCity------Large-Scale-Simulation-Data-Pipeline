@@ -1,0 +1,51 @@
+# =============================================================================
+# Orchestrator image: task planner, reducer, monitor, lease reaper.
+#
+# Pure Python — no Unity, no engine. ~120 MB against the worker's ~400 MB, which
+# matters because the lease-reaper CronJob pulls this every minute.
+#
+#   docker build -f distributed/docker/Dockerfile.orchestrator \
+#       -t sunlightcity/orchestrator:v1 .
+# (build context = repo root, so distributed/ is visible)
+# =============================================================================
+
+FROM python:3.11-slim-bookworm
+
+LABEL org.opencontainers.image.title="SunlightCity orchestrator" \
+      org.opencontainers.image.description="Plans, monitors, reaps and finalises distributed exposure runs"
+
+ENV PYTHONUNBUFFERED=1 \
+    # No .pyc files: the container is immutable and readOnlyRootFilesystem would
+    # make the write fail anyway.
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# psycopg2-binary ships prebuilt wheels with libpq statically linked, so we need
+# no build toolchain and no libpq-dev at runtime. That is the difference between
+# a ~120 MB image and a ~400 MB one, and it removes gcc from the attack surface.
+# (Using psycopg2 from source would require build-essential + libpq-dev here.)
+COPY distributed/orchestrator/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+
+WORKDIR /app
+
+COPY distributed/orchestrator/*.py /app/
+# The reducer executes 04_post_load_indexes.sql by path, so the SQL must ship too.
+COPY distributed/db/*.sql /app/db/
+
+RUN set -eux; \
+    groupadd --gid 10002 orch; \
+    useradd --uid 10002 --gid 10002 --no-create-home --shell /usr/sbin/nologin orch; \
+    chown -R orch:orch /app; \
+    python -m py_compile /app/*.py
+
+USER orch
+
+# --sql-dir default points at ../db relative to the script; inside the image the
+# SQL lives at /app/db, so callers pass --sql-dir=/app/db (the k8s Job does).
+ENV SUNLIT_SQL_DIR=/app/db
+
+# No ENTRYPOINT: this image hosts four distinct commands and the Job/CronJob
+# specifies which. Baking one in would mean overriding it everywhere.
+CMD ["python", "-c", "print('Specify a command: plan_tasks.py | monitor.py | reduce_finalize.py | pg_tune.py')"]

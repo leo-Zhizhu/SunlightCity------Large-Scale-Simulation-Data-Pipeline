@@ -1,0 +1,16 @@
+# Orchestrator dependencies — deliberately minimal.
+#
+# The orchestrator does DB coordination and arithmetic. It has no need for the
+# scientific stack: the daylight model in plan_tasks.py is ~10 lines of stdlib
+# math specifically so this image does not depend on numpy/pandas/pvlib.
+# (Those ARE needed by "Python & DB Scripts/DataGeneration" to build the solar
+# ephemeris — that runs once, offline, not in the cluster.)
+
+# PostgreSQL driver. -binary ships prebuilt wheels with libpq statically linked,
+# so the image needs no compiler and no libpq-dev.
+#
+# NOTE for production: psycopg2-binary is discouraged for long-lived services
+# because its bundled libssl/libpq can drift from the system's. It is the right
+# choice here — these are short-lived batch jobs on an internal network, and the
+# smaller image measurably speeds up the per-minute reaper CronJob pull.
+psycopg2-binary==2.9.9
