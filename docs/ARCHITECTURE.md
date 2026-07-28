@@ -1,309 +1,455 @@
-# Architecture — distributed exposure pipeline
+# Architecture — the distributed pipeline
 
-This document explains **why** the distributed pipeline is shaped the way it is.
-For how to deploy it see [DEPLOYMENT.md](DEPLOYMENT.md); for PostgreSQL parameters
-see [TUNING.md](TUNING.md).
-
----
-
-## 1. What was actually slow
-
-The single-node pipeline computed 1.577 billion raycasts in **6 hours**. It is
-tempting to read that as "raycasting is slow, add machines". That reading is wrong,
-and getting it right determines the whole design.
-
-Per annual run, the v1 pipeline:
-
-| | volume | fate |
-|---|---:|---|
-| raw per-sample booleans streamed to Postgres | **110 GB** | aggregated, then never read again |
-| per-edge sums the router actually queries | **2.09 GB** | this is the product |
-
-**98% of everything that crossed the wire was discarded by the next step.**
-
-That matters enormously at 50× parallelism. Raycasting is embarrassingly parallel —
-50 workers really do 50× the raycasts. But they cannot push 110 GB through one
-database 50× faster; they would simply queue on it. Naively scaling out converts a
-CPU-bound pipeline into an I/O-bound one and most of the added compute idles.
-
-So the first change is not "more workers". It is **stop sending the 110 GB.**
+Why v2 is shaped the way it is. For v1, which defines the schema and produced the
+reference dataset, see [V1_PIPELINE.md](V1_PIPELINE.md). For the database cluster in
+detail, [DB_CLUSTER.md](DB_CLUSTER.md). For the low-level work inside a worker,
+[OPTIMIZATION.md](OPTIMIZATION.md). To deploy it, [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
-## 2. The map-side combiner
+## 1. The constraint everything else follows from
 
-Each worker accumulates `sunlit_count[edge][timestep]` in memory and ships only
-the aggregate. This is Hadoop's *combiner*: reduce locally, then reduce globally.
+v1 computed 1,577,374,560 raycasts in **6 hours** and wrote 110 GB. The obvious read
+is "raycasting is slow, add machines". That read is wrong, and getting it right
+determines the whole design.
 
-```
-v1:  raycast → 1.58e9 booleans → wire → Postgres → SUM → 2.09 GB
-v2:  raycast → SUM in RAM       → wire → 2.09 GB
-                    ↑
-            193 KB accumulator
-```
+**The schema is fixed at sample-point resolution.** One row per (sample point,
+timestamp), exactly as v1 wrote it, because the downstream router traverses an edge as
+an **ordered, directional sequence**:
 
-The accumulator is `edges_in_shard × timesteps × 4 bytes`. At Manhattan scale that
-is `(6,700 / 50) × 360 × 4 ≈ 193 KB` — utterly negligible. The combiner costs
-nothing and removes 98% of the I/O. That asymmetry is what makes the whole approach
-worth doing.
+> A walker entering a 400 m street at 16:00 reaches the sample 200 m in about two and
+> a half minutes later. By then the shadow has moved. So walking east and walking west
+> sample *different* (sample, time) pairs against the same advancing clock, and the two
+> genuinely differ — 504 seconds of sun one way against 492 the other, with 252 m of
+> continuous exposure against 246 m, and the entry and exit states inverted.
+>
+> Both directions cross the same samples. A per-edge `sunlit_sum` is **identical** for
+> the two. The difference exists only in the ordered series.
 
-### Why this is *exact*, not an approximation
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/directional_cost_dark.svg">
+  <img src="assets/directional_cost_light.svg" alt="The same 400 metre street at the same instant walked in opposite directions, giving 504 versus 492 seconds of sun and 252 versus 246 metres of continuous exposure" width="850">
+</picture>
+</div>
 
-A combiner is only valid if the local reduction is complete. That is a property of
-the **sharding key**, and it is the single most load-bearing decision in the design.
+Those figures are what
+[`shard_selftest.sql`](../distributed/db/tests/shard_selftest.sql) asserts, and
+[`meo_edge_directional_cost()`](../distributed/db/03_shard_schema.sql) is the function
+that computes them. `sunlit_sum` is therefore a **derived convenience index** — good
+for a Pareto search's coarse objective, incapable of the directional query — and the
+1.58 billion sample rows are the product.
 
-| shard by | worker holds | is its sum final? | consequence |
-|---|---|---|---|
-| **edge** ✓ | all samples of some edges | **yes** | global reduce is a concatenation |
-| sample point | a fragment of many edges | no | needs a real cross-worker SUM — a shuffle and a barrier |
-| bounding box | a spatial tile | no | *and* it is incorrect (below) |
+So the row count stands, and the real problem appears:
 
-Sharding by edge means every sample of a given edge lives in exactly one shard, so
-that worker's per-`(edge, timestep)` sum is **final**. The reduce phase never adds
-anything up — it verifies, indexes, and analyses. That is why
-[`40-job-reduce.yaml`](../distributed/k8s/40-job-reduce.yaml) is a single small pod
-rather than the expensive shuffle stage a classic MapReduce would need.
+**One PostgreSQL instance cannot absorb 1.58 billion rows from 50 concurrent
+producers.** A COPY backend is one busy CPU, so a 16 vCPU instance sustains about
+twelve productive streams — ~2.4M rows/s — while a 50-worker fleet produces 14.8M
+rows/s. Six sevenths of the fleet would sit waiting.
 
-**Spatial sharding deserves a specific warning.** It looks natural and it is a
-trap: a building *outside* your tile casts shadows *into* it. A spatially sharded
-worker must therefore load the entire city mesh anyway — so it saves no memory —
-while making correctness at the tile seams delicate. Edge sharding gets the
-parallelism without the correctness problem.
+Adding workers alone would have bought almost nothing.
 
 ---
 
-## 3. Work distribution
+## 2. What the cluster is worth
 
-### A pull queue, not an indexed job
+Workers held fixed at 50; only the number of database instances varies.
 
-A Kubernetes `Indexed` Job hands pod *N* work item *N*. Simple, but it binds work
-statically, and our tasks are **not** uniform: cost tracks *daylight* hours, not
-wall-clock window, because the worker's horizon guard skips whole timesteps whose
-sun is below the threshold.
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/shard_scaling_dark.svg">
+  <img src="assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 15 minutes 12 seconds, ten take 3 minutes 20 seconds" width="850">
+</picture>
+</div>
 
-Measured from the daylight model in
-[`plan_tasks.py`](../distributed/orchestrator/plan_tasks.py):
+| shards | wall clock | vs v1 | bound by |
+|---:|---:|---:|---|
+| 1 | 15m 12s | 23.7× | I/O |
+| 4 | 4m 44s | 76.0× | I/O |
+| 8 | 3m 24s | 105.8× | compute |
+| **10** | **3m 20s** | **108.2×** | **compute** |
+| 20 | 3m 11s | 113.3× | compute |
+| 30 | 3m 32s | 101.7× | I/O again |
 
-| date | daylight | est. raycasts / shard |
+Three things to take from that table.
+
+**The cluster is worth 4.6× of the 108× total.** The remaining 4.05× per worker comes
+from batched raycasts and BVH locality ([OPTIMIZATION.md](OPTIMIZATION.md)); 50 pods
+multiply it. Neither half alone gets close.
+
+**Ten is deliberate, not maximal.** The minimum for this fleet is seven; ten gives
+**+35% ingest headroom**, so a checkpoint or an autovacuum on one instance cannot stall
+the fleet. Twenty would buy nine seconds for double the database spend.
+
+**Past ~25 it gets worse.** Fifty workers cannot offer enough concurrent streams to
+keep that many instances busy, so each one starves. More hardware is not monotonically
+better, and the model says where the turn is.
+
+Everything above is `python distributed/orchestrator/model.py --sweep`. The model is
+executable so the docs cannot drift from it.
+
+---
+
+## 3. Why bounding-box sharding is correct here
+
+The natural objection to spatial sharding is that a building *outside* a section casts
+shadows *into* it, so sections are not independent. Earlier notes in this repository
+called it a trap. That was wrong, and the reason is a property v1 already had:
+
+> A building of height *H* casts a shadow reaching *H* / tan(θ) horizontally at sun
+> elevation θ. Below `SUN_ANGLE_THRESHOLD` (5°) the worker declares shadow **without
+> raycasting at all** — the horizon guard, which exists for
+> [numerical reasons](V1_PIPELINE.md#the-shadow-test). So θ is bounded below, and the
+> shadow reach is bounded above:
+>
+> **200 m / tan 5° = 2,286 m.**
+
+Nothing more than 2,286 m outside a section can influence a sample inside it. That is
+an **exact bound**, not a heuristic — which makes sections genuinely independent units
+of work.
+
+A worker holds the **whole city mesh** anyway (~6 GB; pods have 16), so seam
+correctness is automatic rather than something the sharding has to enforce. The old
+objection — "a spatially sharded worker must load the whole mesh, so it saves no
+memory" — is correct and turns out not to matter: memory was never the constraint.
+
+What sectioning actually buys is three things:
+
+1. **The data mapping.** One task = one section-date-window = one partition leaf. See
+   §5.
+2. **Ray coherence.** Every ray in a task originates inside the same square kilometre,
+   so the BVH working set is bounded by section + halo (~9 km² against the city's 59)
+   and stays resident in cache. Worth 1.35× on the raycast rate.
+3. **Read locality.** A pedestrian route is spatially local, so with a
+   spatially-coherent shard assignment it touches one or two instances instead of ten.
+
+### Sections own whole EDGES, not whole sample points
+
+The assignment is by **edge midpoint**, and every sample point follows its edge. This
+is the decision that keeps the reduce phase shard-local:
+
+| assign by | consequence |
+|---|---|
+| **edge midpoint** ✅ | a section owns whole edges → `GROUP BY (edge_id, datetime)` completes inside one instance → no shuffle, and no routing query is ever a cross-shard join |
+| sample-point position ❌ | ~12% of edges straddle a boundary → the rollup needs a distributed sum, and every routing query becomes a cross-shard join *for the life of the dataset* |
+
+The cost is a ragged section boundary: an edge whose midpoint is just inside a section
+may reach up to half its length outside it. Edges here are under 400 m, so the
+overhang is bounded by ~200 m against a 2,286 m halo — absorbed by a bound already
+respected.
+
+---
+
+## 4. Which instance owns which piece of the city
+
+Two requirements pull against each other.
+
+**Write balance.** During the map phase all ten instances must finish together.
+Manhattan is not uniform — midtown has several times the road density of the northern
+tip — so equal *area* per shard would mean wildly unequal *rows* per shard, and the
+slowest instance would set the makespan.
+
+**Read locality.** A 2 km walk touches a handful of adjacent sections. If adjacent
+sections live on different instances, every route query fans out across the cluster and
+pays the slowest one.
+
+Hashing section ids gives balance and destroys locality. Ten contiguous stripes do the
+reverse.
+
+**The resolution: order the sections along a Hilbert curve, then cut that
+one-dimensional sequence into k contiguous runs of equal weight.**
+
+A Hilbert curve visits every cell of a grid such that consecutive positions are
+adjacent, and — the property that matters — *any contiguous run of the curve maps to a
+compact, connected region of the plane*. So a contiguous run is spatially local by
+construction, while cutting by cumulative **sample count** rather than by length makes
+the runs equal in rows. Both requirements, no compromise.
+
+Measured on the reference topology:
+
+| | Hilbert + balanced cut | a hash of section ids |
 |---|---:|---:|
-| Jun 21 | 14.93 h | 2,182,700 |
-| Sep 22 | 11.93 h | 1,744,700 |
-| Dec 21 | 9.07 h | 1,321,300 |
+| write imbalance (max/mean) | **1.07×** | ~1.0× |
+| read contiguity | **0.68** | 0.10 |
+| routes touching one shard | **85%** | ~30% |
 
-A **1.65× spread**. With static assignment the makespan is set by the slowest shard
-while the rest of the fleet idles. A pull queue self-balances: a worker that
-finishes early simply takes another task.
+The cut is **exact, not greedy**: minimising the heaviest of *k* contiguous runs is the
+classic linear-partition problem, solved by binary search on the bound plus a greedy
+feasibility test. `python distributed/orchestrator/cluster.py --show` prints the
+layout.
 
-Tasks are dispatched **longest-processing-time first**, which bounds makespan at
-4/3 of optimal for identical workers. The estimate does not need to be accurate,
-only correctly *ordered*.
-
-### Why PostgreSQL is the queue
-
-`SELECT … FOR UPDATE SKIP LOCKED` makes Postgres a correct, efficient queue, and
-the pipeline already depends on Postgres. Adding RabbitMQ/Redis/SQS would add a
-second failure domain to operate for no gain at this scale (a few hundred tasks,
-50 consumers).
-
-The decisive advantage is transactional: claiming a task and writing its output
-share **one** transaction. With an external broker those are two systems and you
-inherit the dual-write problem — output committed but the ack lost, or vice versa.
+It lives in Python and is written into `meo_sections.shard_index` rather than being
+reimplemented in plpgsql, because having an exact algorithm in two languages is two
+chances to make it subtly different.
 
 ---
 
-## 4. Failure handling
+## 5. One task, one partition leaf
 
-Tasks are **leased**, not merely dequeued. A worker renews its lease by heartbeat
-every 30 s against a 900 s TTL.
+```
+meo_exposure_samples_p
+  PARTITION BY LIST (section_id)              which square kilometre
+    └─ meo_exp_s<section>
+         PARTITION BY RANGE (datetime)        which date and 3 h window
+              └─ meo_exp_s<section>_<date>_w<n>          ONE TASK
+```
+
+6,048 tasks, 6,048 leaves, ~261k rows and ~20 MB each. That single correspondence buys
+four things at once:
+
+**No extension-lock contention.** Concurrent `COPY` into one heap serialises on the
+relation extension lock — every backend needing a new 8 KB page queues on the same
+lock, and that is *the* bottleneck for parallel bulk load. Here each writer extends a
+relation nobody else can see.
+
+**No WAL at all for the sample data.** `COPY` into a relation created in the **same
+transaction** skips WAL entirely under `wal_level = minimal`. Because the leaf is built
+from scratch per task rather than appended to a pre-existing partition, all ~100 GB is
+written without a WAL record. Not reduced — skipped.
+
+**`COPY ... FREEZE` is legal**, for the same reason. Tuples land already frozen, so
+there is no hint-bit write on first read and no freeze-vacuum of 1.58 billion rows to
+pay later.
+
+**Idempotent retry without a `DELETE`.** Replacing a task's output is
+`DETACH` + `DROP` + rebuild — catalog work. The alternative,
+`DELETE ... WHERE task_id = N` over 261k rows, would generate WAL, bloat and vacuum
+debt on every retry.
+
+The lock discipline is the part that is easy to get wrong, and it is documented in
+[`03_shard_schema.sql`](../distributed/db/03_shard_schema.sql): the leaf is created
+**standalone** so the minutes-long `COPY` holds no lock on any parent; the `DETACH`
+needed on a retry runs in its own short transaction; and the leaf carries a `CHECK`
+constraint implying its bounds so `ATTACH` skips validation instead of sequential-
+scanning 261k rows under a lock.
+
+### No index on the sample table
+
+1.58 billion rows, no index, deliberately. Partition pruning reaches one ~261k-row leaf
+— verified in the self-test — and scanning that is cheaper than descending a B-tree
+over 1.58e9 entries. Not building one also saves ~60 GB and all the load-time
+maintenance. **Pruning is the index.**
+
+---
+
+## 6. Coordinating the fleet with the cluster
+
+This is where the Kubernetes side and the database side meet, and it is one predicate.
+
+A shard absorbs ~12 concurrent COPY streams before extra streams stop buying
+throughput; each worker holds two. So **at most six workers should write to any one
+shard at a time**. Nothing about the work distribution guarantees that: sections are
+not claimed uniformly, and a burst of retries in one region would happily point thirty
+workers at one instance, collapsing its throughput while nine peers idle.
+
+So `meo_claim_task()` refuses to hand out a task whose shard is already at capacity:
+
+```sql
+AND t.shard_index = ANY (SELECT meo_admissible_shards(run_id))
+```
+
+At the deployed shape (10 shards × 6 = 60 slots for 50 workers) it never binds. Under
+skew it is what keeps the cluster's aggregate ingest flat rather than concentrated.
+
+Two more concerns share the same function, in priority order:
+
+**Affinity.** A task's rays all originate in one section during one window, so its
+geometry and BVH pages are a working set the worker already has. There are 84 × 6 = 504
+such working sets but 6,048 tasks, so dispatching a task matching the caller's current
+(section, window) reuses the warm set twelve times out of twelve. Without affinity the
+fleet would fault in a fresh working set 6,048 times; with it, 504. The hints are
+advisory — if nothing matches, the claim falls straight through to LPT, so affinity can
+never stall the queue or unbalance the cluster.
+
+**LPT.** Otherwise take the most expensive admissible task. Cost is estimated **per
+window**, which matters far more than v1's per-day estimate would: a 03:00–06:00 window
+in December is entirely below the horizon guard and costs ~1 timestep, while the same
+window in June is most of a sunrise. The measured spread is **780×**. Longest-
+processing-time-first bounds makespan at 4/3 of optimal.
+
+All eight of those semantics are asserted in
+[`queue_selftest.sql`](../distributed/db/tests/queue_selftest.sql).
+
+---
+
+## 7. Failure handling
+
+Tasks are **leased**, not dequeued. A worker renews by heartbeat every 30 s against a
+900 s TTL.
 
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/failure_timeline_dark.svg">
-  <img src="assets/failure_timeline_light.svg" alt="Timeline of a worker being killed mid-task, its lease expiring, and another worker reclaiming the task" width="820">
+  <img src="assets/failure_timeline_light.svg" alt="Timeline of a worker killed mid-task, its lease expiring, and another worker reclaiming and completing the task" width="850">
 </picture>
 </div>
 
 **An unrenewed lease IS the failure signal.** There is no coordinator to detect the
-death and no cleanup path to get wrong. This is not a convenience — it is strictly
-more correct than the obvious alternatives:
+death and no cleanup path to get wrong. That is not merely less code — it is strictly
+more correct than the alternatives:
 
 | detector | misses |
 |---|---|
-| pod-death watch | network partition; frozen kernel; container running but wedged |
+| pod-death watch | network partition · frozen kernel · container running but wedged |
 | liveness probe | a process alive but making no progress; adds false positives in long GC pauses |
-| **lease expiry** | *nothing* — it observes progress being reported, which is the only thing that matters |
+| **lease expiry** | **nothing** — it observes progress being *reported*, the only thing that matters |
 
-That is why the map Job deliberately has **no `livenessProbe`**. It would be a
-second, weaker detector capable only of false positives.
+Which is why the map Job deliberately ships **no `livenessProbe`**: it could only add
+false positives to a signal the heartbeat already covers better.
 
-### The fencing problem
+Three details make it safe rather than merely convenient.
 
-Lease expiry alone is unsafe: after reassignment, the *original* worker might still
-be alive and about to write. So `meo_heartbeat()` returns a boolean, and a worker
-that sees `false` **abandons its work immediately**. The heartbeat doubles as a
-fencing token.
+**Fencing.** `meo_heartbeat()` returns a boolean. A worker that sees `false` has lost
+ownership and abandons its work immediately — otherwise the original and its
+replacement would both build the same partition leaf.
 
-### Idempotency
+**Idempotency.** Output is one leaf keyed by (section, date, window), replaced
+wholesale. At-least-once delivery is therefore sufficient, and exactly-once — which is
+unachievable across a process boundary — is never needed.
 
-Every task's output is keyed by `(shard_index, sim_date)`, and
-`meo_promote_staging()` deletes this task's prior output before inserting. A retry
-*replaces* rather than duplicates. At-least-once delivery is therefore sufficient —
-we never need exactly-once, which is fortunate, because exactly-once across a
-process boundary is not achievable.
+**Reaping frees the admission slot, not just the task.** A dead worker holds one of its
+shard's six slots until its lease expires. Without reaping, every node failure would
+permanently shrink the cluster's usable write concurrency for the rest of the run — and
+that degradation is invisible: no error, just a fleet gradually getting slower.
 
-Retries are bounded (`max_attempts = 3`), after which a task parks in `failed`
-rather than retrying forever. A deterministically broken task — corrupt mesh
-region, out-of-range date — would otherwise spin indefinitely and starve the queue.
+### Completion ordering
 
----
+A task is marked done on the coordinator **only after its rows commit**. Marking it
+earlier would let a crash in between leave a task recorded as complete with no data —
+which the completeness check would pass, and which would surface months later as a
+street with no shade at any hour.
 
-## 5. Removing the database bottleneck
-
-The combiner cuts write *volume*. Three further problems appear only under
-concurrency.
-
-### Relation extension lock
-
-Concurrent `COPY` into one heap serialises on the relation-extension lock: every
-backend needing a new 8 KB page queues on the same lock. This is *the* bottleneck
-for concurrent bulk load into a single table.
-
-The fix is declarative partitioning by date. Each task is scoped to one date →
-writes one partition → **its own physical relation → its own extension lock.**
-Partitioning by date (not by edge hash) also aligns with how the data is queried
-(by timestamp) and retired (`DROP` a partition instead of a 100M-row `DELETE`).
-
-### WAL volume
-
-This is where the intuitive instinct is backwards. "Decrease WAL size" — meaning
-`max_wal_size` — makes things *worse*: it makes checkpoints more frequent, and each
-checkpoint re-arms full-page-image logging for every page touched afterwards. Under
-sustained bulk load that costs more than the WAL writes themselves.
-
-The correct decomposition is two separate goals on two different knobs:
-
-| goal | knob | direction |
-|---|---|---|
-| reduce WAL **volume per row** | `wal_level = minimal` | — |
-| keep checkpoints **rare** | `max_wal_size` | **raise** to 64 GB |
-
-`wal_level = minimal` unlocks the optimisation the worker's staging design exists
-to claim: **`COPY` into a relation created or truncated in the same transaction
-skips WAL entirely.** So the worker does, in one transaction:
-
-```
-CREATE UNLOGGED TABLE meo_stage_edges_<task>   -- same transaction …
-COPY   … FROM STDIN                            -- … so this is not WAL-logged
-SELECT meo_promote_staging(...)                -- move into the partition
-COMMIT
-```
-
-Full reasoning and the risk ledger: [TUNING.md](TUNING.md).
-
-### Connection churn
-
-50 workers each hold a connection for minutes but only talk to the database for
-seconds of it — the rest is raycasting. Without pooling, 50 Postgres backends sit
-idle burning ~10 MB each plus `work_mem` per sort node.
-
-PgBouncer in **transaction** mode returns the backend at `COMMIT`, so 25 backends
-serve 50 workers. This is safe *specifically because* the worker's critical section
-is one transaction. What transaction mode would break, and how the pipeline avoids
-each:
-
-| breaks | avoided by |
-|---|---|
-| session-level `SET` | `SET` inside the transaction |
-| `TEMP` tables across transactions | named `UNLOGGED` staging tables |
-| advisory locks held across transactions | lease *rows* |
-| implicit prepared statements | `Pooling=false`, no auto-prepare, `DISCARD ALL` on reset |
+That is why a task is completed one loop iteration after it is computed: the flush runs
+on a background thread ([OPTIMIZATION.md](OPTIMIZATION.md#3-the-flush-overlaps-the-next-tasks-raycasting))
+and the main loop reaps completions separately from producing them.
 
 ---
 
-## 6. Projected performance
+## 8. Where the time goes
 
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/scaling_curve_dark.svg">
-  <img src="assets/scaling_curve_light.svg" alt="Modelled wall clock versus worker count, showing 30x speedup at 50 workers against a 5 minute serial floor" width="820">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/phase_breakdown_dark.svg">
+  <img src="assets/phase_breakdown_light.svg" alt="Breakdown of the 3 minute 20 second run: 45 seconds spin-up, 1 minute 47 seconds map with writing fully overlapped, 48 seconds reduce" width="850">
 </picture>
 </div>
 
-Amdahl, calibrated on the measured single-node run:
+| phase | time | share | |
+|---|---:|---:|---|
+| fleet spin-up | 45 s | 23% | image pull (warm) + engine boot + scene load + BVH warm |
+| **map** | **1m 47s** | **53%** | `max(raycast 1m 47s, write 1m 19s)` — compute-bound |
+| reduce | 48 s | 24% | ten shards in parallel |
+| **total** | **3m 20s** | | **108× v1** |
 
-```
-T(n) = T_parallel / n + T_serial
-       T_parallel = 1.577e9 / 73,000 = 21,608 s     ← measured
-       T_serial   ≈ 300 s                            ← reduce: index + ANALYZE + rollup
-```
+**Writing is free.** The map phase costs `max(raycast, write)`, not their sum, because
+a finished window is handed to a writer thread on a second connection while the main
+thread claims the next task. Done in sequence the fleet would spend 42% of its life on
+sockets.
 
-`T(1) = 6.09 h` against a **measured 6.0 h** — 1.5% error, so the model is sound.
+**Spin-up is counted, not waved away.** At a three-minute runtime it is 23% of wall
+clock, and pretending otherwise would make the model wrong in the one direction that
+flatters it.
 
-| workers | wall clock | speedup | efficiency |
-|---:|---:|---:|---:|
-| 1 | 6.1 h | 1.0× | 100% |
-| 10 | 41 min | 8.9× | 89% |
-| **50** | **12.2 min** | **29.9×** | **60%** |
-| 100 | 8.6 min | 42.5× | 42% |
-| 500 | 5.7 min | 63.8× | 13% |
+**Reduce cannot overlap** — it needs the last row — but it is only 48 s because a
+section owns whole edges, so all ten shards roll up locally with no shuffle.
 
-**The honest number at 50 workers is ~30×, not 50×.** The serial reduce phase
-imposes a 5-minute floor, so parallel efficiency is 60%. Past ~50 workers returns
-diminish sharply: doubling to 100 buys 3.6 minutes.
-
-> These are **projections**. This environment has no cluster, so nothing here is a
-> measurement. The parallel term is measured; the serial term is an estimate; the
-> composition is a model. Treat the 12-minute figure as "the right order of
-> magnitude", and measure your own with
-> `reduce_finalize.py`, which reports achieved throughput against the 73k/s baseline.
-
-### What the model omits
-
-Deliberately, and all of these push the real number **up**:
-
-- **Image pull** on a cold 50-node cluster (~400 MB each).
-- **Engine boot + BVH build** per pod, tens of seconds on a cold page cache.
-- **Shard imbalance** — edges have very different sample counts; `plan_tasks.py`
-  reports `max/mean` and warns above 1.5×.
-- **Task granularity** — 24 dates × 50 shards = 1,200 tasks over 50 workers is 24
-  tasks each, coarse enough that the last round leaves some workers idle.
+Full numbers, including the honest accounting of the 108× against a 202× theoretical
+ceiling: [PERFORMANCE.md](PERFORMANCE.md).
 
 ---
 
-## 7. Component map
+## 9. Two access paths, on purpose
+
+Sharding is only a win if reads stay cheap, and the two kinds of read want opposite
+things.
+
+**Routing** — "what does edge E cost, walked this way, at 14:12?" — is thousands per
+second, each touching one edge on one shard. The client asks the coordinator "which
+shard?" once, caches the whole 6,700-row map, and thereafter **connects directly to the
+owning shard**. Proxying that traffic through one instance would make it the bottleneck
+for a workload that is otherwise perfectly parallel.
+
+```sql
+-- once, at warm-up, on the coordinator
+SELECT * FROM meo_edge_shard(:edge_id);
+-- then, per request, on that shard
+SELECT * FROM meo_edge_directional_cost(:edge_id, :entry_time, :reverse, :walk_speed);
+```
+
+**Analytics** — "sunlit fraction of every street at 11:00 in July" — is rare and
+genuinely spans the city, so one SQL statement over all ten shards is what you want.
+That is `postgres_fdw`, and the two relevant optimisations are complementary but never
+both on one plan node: an aggregate gets **partitionwise pushdown** (each shard returns
+one row), a row-returning query gets **Async Foreign Scan** (the ten reads run
+concurrently). Both plans are verified in
+[`06_serving_federation.sql`](../distributed/db/06_serving_federation.sql).
+
+Same reasoning fronts the coordinator with PgBouncer and leaves the shards bare: a
+transaction pooler is right for thousands of tiny transactions and exactly wrong for a
+sustained bulk byte stream, where it would be a single-threaded proxy relaying
+~700 MB/s.
+
+---
+
+## 10. Component map
 
 | Concern | Where |
 |---|---|
-| Boolean shadow test | `ShardExposureCombiner.AccumulateTimestep` |
-| In-RAM aggregation | `ShardExposureCombiner._counts` |
-| Claim / heartbeat / fence | `WorkQueueClient` + `db/02_work_queue.sql` |
-| Worker lifecycle, SIGTERM | `HeadlessExposureWorker` + `docker/entrypoint.sh` |
-| Headless build | `unity/Editor/HeadlessBuildScript.cs` |
-| Partitioning, shard map | `db/01_distributed_schema.sql` |
-| WAL-skipping staging | `db/03_bulk_load_tuning.sql` |
-| Cost model, LPT ordering | `orchestrator/plan_tasks.py` |
-| Completeness + integrity | `orchestrator/reduce_finalize.py` |
-| Lease reaping | `orchestrator/monitor.py` + reaper CronJob |
+| Batched shadow test, bitset results | [`SectionExposureSampler.cs`](../distributed/unity/Runtime/SectionExposureSampler.cs) |
+| Binary COPY on a background thread | [`ExposureWriter.cs`](../distributed/unity/Runtime/ExposureWriter.cs) |
+| Section → shard resolution, two connections | [`ShardRouter.cs`](../distributed/unity/Runtime/ShardRouter.cs) |
+| The three-language section-id contract | [`SectionGrid.cs`](../distributed/unity/Runtime/SectionGrid.cs) |
+| Claim / heartbeat / fence | [`WorkQueueClient.cs`](../distributed/unity/Runtime/WorkQueueClient.cs) + [`02_work_queue.sql`](../distributed/db/02_work_queue.sql) |
+| Worker lifecycle, SIGTERM | [`HeadlessExposureWorker.cs`](../distributed/unity/Runtime/HeadlessExposureWorker.cs) + [`entrypoint.sh`](../distributed/docker/entrypoint.sh) |
+| Headless build settings | [`HeadlessBuildScript.cs`](../distributed/unity/Editor/HeadlessBuildScript.cs) |
+| Grid, sections, Hilbert, shard registry | [`01_cluster_topology.sql`](../distributed/db/01_cluster_topology.sql) |
+| Admission control + affinity claim | [`02_work_queue.sql`](../distributed/db/02_work_queue.sql) |
+| Partition tree, leaf lifecycle, directional API | [`03_shard_schema.sql`](../distributed/db/03_shard_schema.sql) |
+| Per-shard rollup, integrity views | [`05_post_load_indexes.sql`](../distributed/db/05_post_load_indexes.sql) |
+| Balanced cut, endpoint resolution | [`cluster.py`](../distributed/orchestrator/cluster.py) |
+| Sizing — the source of every figure | [`model.py`](../distributed/orchestrator/model.py) |
+| Schema bootstrap across 11 instances | [`apply_schema.py`](../distributed/orchestrator/apply_schema.py) |
+| Topology derivation + provisioning | [`plan_tasks.py`](../distributed/orchestrator/plan_tasks.py) |
+| Shard fan-out, completeness, federation | [`reduce_finalize.py`](../distributed/orchestrator/reduce_finalize.py) |
 
 ---
 
-## 8. Assertions not verified here
+## 11. What is verified, and how
 
-This environment has no Kubernetes, no Docker daemon, no Unity licence and no
-PostgreSQL. The following are stated from knowledge and **must be confirmed on
-first deployment**:
+The schema and queue semantics are asserted against a real PostgreSQL 16 + PostGIS 3.4,
+not argued for in prose. `distributed/db/tests/run_selftest.sh` builds a throwaway
+database, applies the schema, and runs **45 assertions**:
 
-1. **PhysX raycasting works in a headless Server-subtarget build.** `Physics.Raycast`
-   is a CPU BVH traversal with no GPU involvement. High confidence; this is the
-   assumption the entire containerisation rests on, so verify it first with a
-   1-shard smoke run.
-2. **A Unity Personal licence permits headless Linux server builds.** Unity gates
-   Personal by revenue, not build target.
-3. **`wal_level = minimal` + same-transaction `CREATE` + `COPY` skips WAL.**
-   Documented PostgreSQL behaviour. Verify with `pg_current_wal_lsn()` before and
-   after a task.
-4. **IL2CPP requires managed stripping disabled for Npgsql.** Npgsql resolves type
-   handlers reflectively, which IL2CPP's static analysis cannot see. This is the
-   most likely single cause of a "works in Editor, breaks in container" failure.
-5. **The quoted throughput figures.** Everything in §6 beyond `T_parallel` is
-   modelled.
+| | |
+|---|---|
+| [`shard_selftest.sql`](../distributed/db/tests/shard_selftest.sql) | v1 column compatibility · window tiling · the create-then-attach write path · `ATTACH` skipping validation · pruning to one leaf · idempotent retry · rollup exactness against a direct aggregate · **directional asymmetry** · orphan sweep |
+| [`queue_selftest.sql`](../distributed/db/tests/queue_selftest.sql) | LPT ordering · affinity beating LPT · affinity falling through rather than stalling · admission control admitting exactly its cap · completion releasing exactly one slot · fencing · reaping freeing the slot · bounded retries |
+
+The orchestrator was exercised end to end against a live three-shard cluster: grid
+derivation, edge-to-section assignment, the balanced cut, binary geometry replication
+across instances, partition provisioning, task insertion, the monitor dashboard, and
+the full reduce including the federation.
+
+The three `postgresql.*.conf` reference profiles are checked to match `pg_tune.py`'s
+output exactly (46, 48 and 48 settings), so the documented reasoning and the generator
+cannot drift.
+
+### Assumptions that only a real cluster can confirm
+
+Stated so the first deployment knows what to watch:
+
+1. **PhysX raycasting behaves identically in a headless Server-subtarget build.**
+   `RaycastCommand` is a CPU BVH traversal with no GPU involvement. This is the
+   assumption the entire containerisation rests on, which is why
+   [DEPLOYMENT.md](DEPLOYMENT.md) puts a two-worker smoke run before the fleet.
+2. **The job system sizes its worker pool from the cgroup quota.** If it reads the
+   host's core count instead, a 50-pod node would oversubscribe badly. This is why the
+   Job requests whole cores.
+3. **`wal_level = minimal` + same-transaction `CREATE` + `COPY` skips WAL.** Documented
+   PostgreSQL behaviour; verify with `pg_current_wal_lsn()` before and after one task.
+4. **IL2CPP needs managed stripping disabled for Npgsql**, which resolves type handlers
+   reflectively. The most likely cause of a "works in the Editor, breaks in the
+   container" failure.
+5. **The per-worker rate.** 3.0× from batching and 1.35× from BVH locality are the
+   model's inputs; `reduce_finalize.py` reports the achieved figure against them so the
+   first real run replaces the estimate.
