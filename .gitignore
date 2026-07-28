@@ -1,0 +1,96 @@
+# ─── Large binaries ────────────────────────────────────────────────────────────
+# The packaged Unity project (~1 GB: city meshes, colliders, baked assets) is far
+# past GitHub's file limit. It is distributed via Google Drive instead — see the
+# "Getting started" section of README.md for the link.
+SunlightCity Unity Package.zip
+*.zip
+
+# Redundant export of SetUp Guide.md — the Markdown file is the source of truth.
+*.md.docx
+
+# Database dumps and backups
+*.sql
+*.sql.gz
+*.dump
+db_export/
+sql/
+city_data_backup_*/
+export_log_*.txt
+
+# Solar position data (regenerate with DataGeneration/generate_solar_positions.py)
+*.bin
+sun_pos_*.csv
+
+# ─── Unity ─────────────────────────────────────────────────────────────────────
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+*.app
+crashlytics-build.properties
+
+# ─── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# ─── Generated analysis output ─────────────────────────────────────────────────
+# Cached query results and derived plots. sun_exposure_data.json/.csv and the
+# diurnal PNG in docs/assets are committed deliberately — they are the small,
+# reviewed inputs to the README figures. Everything below is regenerable churn.
+scratch/
+figure_one/
+figure_one_data.json
+enriched/
+monthly_exposure_totals_*.png
+sun_exposure_plot_final.png
+total_sun_exposure_annual.png
+road_graph.svg
+road_graph.png
+road_graph.jpg
+partition_report.txt
+
+# ─── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
