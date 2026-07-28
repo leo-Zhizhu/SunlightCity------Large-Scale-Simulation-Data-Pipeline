@@ -1,0 +1,144 @@
+# =============================================================================
+# SCHEMA + PLAN — one Job that prepares the whole cluster.
+#
+# Runs after the database StatefulSets are ready and before the map fleet. Two
+# steps, in one pod because the second depends on the first and splitting them
+# would need an external sequencer for no benefit:
+#
+#   1. apply_schema.py --phase load
+#      01+02 to the coordinator, 03 to every shard, 04 to both (it detects its own
+#      role). Six numbered files across eleven instances in an order that matters;
+#      the failure mode for getting it wrong is silent until the fleet has been
+#      running for minutes.
+#
+#   2. plan_tasks.py --provision
+#      Derives the section grid, assigns edges to sections by midpoint, cuts the
+#      Hilbert-ordered sections into ten balanced runs, registers the shards,
+#      replicates the static geometry to each by binary COPY, provisions the section
+#      parents and edge partitions, and fills the queue.
+#
+# WHY A JOB AND NOT AN initContainer ON THE MAP JOB
+# ------------------------------------------------
+# The planning step is global — it must run exactly ONCE, with a view of the whole
+# graph. As an initContainer it would run fifty times concurrently, and while every
+# step is individually idempotent, fifty simultaneous `meo_rebuild_sections()` calls
+# racing on the same rows is not something to rely on. A Job with completions: 1 says
+# "once" in the type system.
+#
+# Gate the map phase on it:
+#   kubectl -n sunlightcity wait --for=condition=complete job/sunlit-schema --timeout=20m
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sunlit-schema
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: schema
+spec:
+  completions: 1
+  parallelism: 1
+
+  # Retries are for the databases not being ready yet, which the entrypoint's wait
+  # loop already handles — so a failure here almost always means a real problem
+  # (unreachable shard, missing geometry) that retrying will not fix. Fail fast.
+  backoffLimit: 3
+
+  # Geometry replication moves ~140 MB to each of ten shards. Generous, because a
+  # slow network here is annoying rather than a bug.
+  activeDeadlineSeconds: 3600
+  ttlSecondsAfterFinished: 86400   # keep a day: this pod's log is the plan
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sunlightcity
+        app.kubernetes.io/component: schema
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        fsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: schema
+          image: sunlightcity/orchestrator:v2
+          imagePullPolicy: IfNotPresent
+
+          # -u for unbuffered stdout, so `kubectl logs -f` shows progress live rather
+          # than in 8 KB bursts. The planner prints the shard balance table as it
+          # goes, and that is the output an operator actually watches.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "=== 1/2  schema ==="
+              python -u /app/apply_schema.py --phase load --sql-dir /app/db
+              echo
+              echo "=== 2/2  plan + provision ==="
+              python -u /app/plan_tasks.py \
+                --run-id "$SUNLIT_RUN_ID" \
+                --shards "$SUNLIT_SHARD_COUNT" \
+                --workers "$SUNLIT_WORKER_COUNT" \
+                --section-meters "$SUNLIT_SECTION_METERS" \
+                --sun-angle-threshold "$SUNLIT_SUN_ANGLE_THRESHOLD" \
+                --global-elevation "$SUNLIT_GLOBAL_ELEVATION" \
+                --city "$SUNLIT_CITY" \
+                --year "$SUNLIT_SOLAR_YEAR" \
+                --provision
+
+          env:
+            - name: SUNLIT_RUN_ID
+              value: "run-2026-annual"
+            # Must match the map Job's parallelism. The planner only uses it to
+            # sanity-check the shard count against the model's minimum and to warn if
+            # the fleet will be waiting on I/O.
+            - name: SUNLIT_WORKER_COUNT
+              value: "50"
+            # Schema and planning talk to PostgreSQL DIRECTLY, bypassing PgBouncer.
+            # Deliberate: these are long, session-affine operations (CREATE TABLE,
+            # binary COPY of 140 MB per shard) and a transaction-mode pooler is the
+            # wrong tool for them. It would also pin a pooled backend for the whole
+            # provisioning run, starving the fleet's claims.
+            - name: SUNLIT_COORD_HOST
+              value: "sunlit-coordinator"
+            - name: SUNLIT_COORD_PORT
+              value: "5432"
+
+          envFrom:
+            - configMapRef:
+                name: sunlit-worker-config
+            - secretRef:
+                name: sunlit-db-credentials
+
+          resources:
+            requests:
+              cpu: "1"
+              # Geometry replication spools through a 64 MB in-memory buffer before
+              # falling back to disk, and psycopg2 holds one binary COPY stream.
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            # readOnlyRootFilesystem plus a SpooledTemporaryFile means the geometry
+            # replication needs somewhere real to spill for meo_sample_points.
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

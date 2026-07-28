@@ -56,8 +56,13 @@ trap 'forward_signal INT'  INT
 # At 50 pods x a misconfigured rollout that difference is very visible.
 # -----------------------------------------------------------------------------
 : "${SUNLIT_RUN_ID:?SUNLIT_RUN_ID is required — the run whose tasks to claim. Set it in the Job spec.}"
-: "${SUNLIT_DB_HOST:?SUNLIT_DB_HOST is required.}"
+: "${SUNLIT_COORD_HOST:?SUNLIT_COORD_HOST is required — the control-plane instance (normally PgBouncer).}"
 : "${SUNLIT_DB_PASSWORD:?SUNLIT_DB_PASSWORD is required — project it from a Kubernetes Secret, never bake it into the image.}"
+
+# The SHARD endpoints are deliberately NOT checked here, and are not required env at
+# all: the worker reads them from the coordinator's meo_shards registry at boot, so
+# an instance can be replaced mid-run without redeploying 50 pods. Only the DNS
+# template is configured, and it has a sensible default in the image.
 
 # Pod name as worker id: already unique, and it lets a leased task be traced
 # straight back to a pod's logs. Injected via the downward API in the Job spec.
@@ -95,14 +100,18 @@ wait_for_db() {
     die "database ${host}:${port} not reachable after ${timeout}s"
 }
 
-wait_for_db "${SUNLIT_DB_HOST}" "${SUNLIT_DB_PORT:-5432}" "${SUNLIT_DB_WAIT_SECONDS:-180}"
+# Only the COORDINATOR is waited for. The shards are reached later, after the worker
+# has read the routing map — and a shard that is slow to start is a per-task failure
+# the lease recovers, not a reason to hold up a pod that could be working on another
+# shard's sections meanwhile.
+wait_for_db "${SUNLIT_COORD_HOST}" "${SUNLIT_COORD_PORT:-6432}" "${SUNLIT_DB_WAIT_SECONDS:-300}"
 
 # -----------------------------------------------------------------------------
 # Launch
 # -----------------------------------------------------------------------------
 [[ -x "$PLAYER" ]] || die "player not executable at ${PLAYER}"
 
-log "starting worker: run=${SUNLIT_RUN_ID} worker=${SUNLIT_WORKER_ID} db=${SUNLIT_DB_HOST}"
+log "starting worker: run=${SUNLIT_RUN_ID} worker=${SUNLIT_WORKER_ID} coordinator=${SUNLIT_COORD_HOST}:${SUNLIT_COORD_PORT:-6432}"
 
 # -batchmode  : no window, no interactive prompts
 # -nographics : do not initialise a graphics device at all. Belt-and-braces

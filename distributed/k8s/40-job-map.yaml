@@ -1,6 +1,9 @@
 # =============================================================================
 # THE MAP PHASE — 50 headless Unity workers pulling from the lease queue.
 #
+# Depends on job/sunlit-schema having completed:
+#   kubectl -n sunlightcity wait --for=condition=complete job/sunlit-schema --timeout=20m
+#
 # READ THIS BEFORE CHANGING parallelism/completions
 # -------------------------------------------------
 # This Job uses `completions` == `parallelism` with a PULL QUEUE, which is a
@@ -11,9 +14,11 @@
 #     it means "50 workers each ran to a clean drain".
 #
 #   * This is the "work queue with a fixed pool" pattern. It self-balances: a pod
-#     on a fast node simply completes more tasks. With an Indexed Job the
-#     assignment would be static and the makespan would be set by the slowest
-#     single shard while 49 pods idled.
+#     on a fast node simply completes more tasks. With an Indexed Job the assignment
+#     would be static and the makespan would be set by the single worst task —
+#     which here would be brutal, because a 12:00-15:00 window in June costs ~60
+#     timesteps of raycasting while the same window in December costs ~1. The
+#     planner measures that spread and it is 780x.
 #
 #   * `completions` is set (rather than left null for a pure worker-queue Job)
 #     so the Job object itself reports completion, which is what a CI pipeline or
@@ -21,6 +26,14 @@
 #
 # To scale: change BOTH values together. Scaling parallelism alone leaves the Job
 # waiting forever for completions that will never arrive.
+#
+# AND SCALE THE DATABASE CLUSTER WITH IT. Adding workers without adding shards
+# converts a compute-bound pipeline into an I/O-bound one, which is the exact
+# failure this architecture exists to avoid: 50 workers against ONE instance finish
+# in 15m 12s, against ten in 3m 20s. `python model.py --workers-sweep` prints the
+# minimum shard count for any fleet size. Past the balance point the per-shard
+# admission cap in meo_claim_task simply makes the extra workers queue, so
+# over-scaling is wasteful rather than harmful.
 # =============================================================================
 apiVersion: batch/v1
 kind: Job
@@ -46,8 +59,8 @@ spec:
   backoffLimit: 6
 
   # Hard ceiling on the whole phase. Without this a wedged run holds cluster
-  # capacity indefinitely. 4 h is ~20x the expected 12 min.
-  activeDeadlineSeconds: 14400
+  # capacity indefinitely. 2 h is ~35x the expected 1m 47s of map work.
+  activeDeadlineSeconds: 7200
 
   # Keep finished pods for 1 h so logs are retrievable, then let the TTL
   # controller clean up. Without this, 50 Completed pods accumulate per run.
@@ -89,9 +102,11 @@ spec:
 
       # ---- Scheduling -----------------------------------------------------
       # Spread workers across nodes. Not for availability (this is a batch job) but
-      # for THROUGHPUT: co-locating raycast-bound workers on one node makes them
-      # contend for memory bandwidth and last-level cache, which measurably slows
-      # BVH traversal. One worker per node per 4 cores is the target shape.
+      # for THROUGHPUT, and it matters more now than it did with v1's single-threaded
+      # loop: each worker fans a timestep's rays across seven job-system threads, so
+      # two co-located pods contend for memory bandwidth and last-level cache across
+      # sixteen busy threads. BVH traversal is bandwidth-bound before it is
+      # compute-bound, so that contention comes straight off the raycast rate.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -115,7 +130,7 @@ spec:
 
       containers:
         - name: worker
-          image: sunlightcity/worker:v1
+          image: sunlightcity/worker:v2
           imagePullPolicy: IfNotPresent
 
           envFrom:
@@ -146,24 +161,41 @@ spec:
 
           resources:
             requests:
-              # 4 cores: the raycast loop is single-threaded (PhysX queries must run
-              # on Unity's main thread), so the extra cores serve IL2CPP's server GC,
-              # the Npgsql socket, and the OS. Requesting 4 also keeps the scheduler
-              # from packing workers so densely that they thrash shared cache.
-              cpu: "4"
-              # The city mesh + BVH dominates. The combiner's accumulator is ~193 KB
-              # and the raw buffer is capped by SUNLIT_COPY_BATCH_ROWS, so memory is
-              # essentially constant in run length — that is the whole point of the
-              # bounded-flush design.
-              memory: 8Gi
+              # 8 WHOLE cores, and both parts of that matter.
+              #
+              # Eight because the raycast loop is no longer single-threaded:
+              # RaycastCommand.ScheduleBatch fans a timestep's rays across the job
+              # system's worker threads, so cores now genuinely convert into
+              # throughput (3.0x on 8 vCPU — short of 8x because the main thread still
+              # builds the command array and folds results, and because BVH traversal
+              # saturates memory bandwidth first).
+              #
+              # WHOLE because Unity sizes the job worker pool from the visible core
+              # count, which inside a container is the cgroup quota. A fractional
+              # request like 3500m would collapse the pool and silently forfeit most
+              # of the per-worker speedup — with no error and no obvious symptom
+              # beyond "the fleet is slower than the model says".
+              cpu: "8"
+              # The whole city mesh + BVH dominates, and the worker holds all of it —
+              # which is what makes seam correctness automatic rather than something
+              # the sharding has to enforce. Everything else is fixed at boot: the
+              # sampler's persistent buffers are ~2.6 MB and the writer's payload
+              # ~123 KB, both sized from SUNLIT_MAX_SECTION_SAMPLES and reused for
+              # the pod's life. Memory is therefore constant in run length, not
+              # merely bounded.
+              memory: 16Gi
               ephemeral-storage: 2Gi
             limits:
-              cpu: "6"
-              # Only ~1.5x the request. A worker that grows past this has a leak, and
-              # OOMKilling it is the correct response: the lease returns its task and
-              # a fresh pod picks it up. A generous limit would instead let one pod
-              # slowly consume the node and destabilise its neighbours.
-              memory: 12Gi
+              # No CPU limit. A quota would throttle exactly the burst the fleet is
+              # waiting on, and topologySpreadConstraints already keeps the pods from
+              # oversubscribing a node.
+              # Memory at only 1.5x the request: the steady state is allocation-free
+              # (SectionExposureSampler asserts it per window), so a worker that grows
+              # past this has a leak and OOMKilling it is the correct response — the
+              # lease returns its task and a fresh pod picks it up. A generous limit
+              # would instead let one pod slowly consume the node and destabilise its
+              # neighbours.
+              memory: 24Gi
               ephemeral-storage: 4Gi
 
           # ---- Probes ----
@@ -185,7 +217,10 @@ spec:
                 - "test -f /tmp/sunlit-ready"
             initialDelaySeconds: 10
             periodSeconds: 5
-            # 5 min to boot: engine start + mesh load + BVH build on a cold page cache.
+            # 5 min to boot: engine start + mesh load + BVH build on a cold page
+            # cache, plus fetching the section->shard routing map from the coordinator
+            # and allocating the persistent buffers. The marker is written only after
+            # all of that, so the probe distinguishes "still booting" from "hung".
             failureThreshold: 60
             timeoutSeconds: 3
 

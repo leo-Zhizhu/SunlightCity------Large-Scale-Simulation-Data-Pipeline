@@ -1,12 +1,18 @@
 # =============================================================================
-# Worker configuration.
+# Worker and orchestrator configuration.
 #
 # Split into a ConfigMap (non-secret, reviewable in git, diffable across
 # environments) and a Secret (credentials, never committed with real values).
 #
-# Every key here maps 1:1 onto a field in WorkerConfig.cs. Keeping the names
-# identical means a config question can be answered by grepping one string across
-# both the manifest and the source.
+# Every key here maps 1:1 onto a field in WorkerConfig.cs or an environment lookup
+# in orchestrator/cluster.py. Keeping the names identical means a config question
+# can be answered by grepping one string across both the manifest and the source.
+#
+# NOTE WHAT IS AND IS NOT HERE. The COORDINATOR's address is configuration. The ten
+# SHARDS' addresses are not — a worker reads them from the coordinator's meo_shards
+# registry at boot, so an instance can be replaced mid-run without redeploying 50
+# pods. Only the DNS template is configured, because it is what the StatefulSet's
+# headless Service happens to produce.
 # =============================================================================
 apiVersion: v1
 kind: ConfigMap
@@ -14,71 +20,129 @@ metadata:
   name: sunlit-worker-config
   namespace: sunlightcity
 data:
-  # ---- Database endpoint ----------------------------------------------------
-  # Points at PgBouncer, not Postgres directly. See 20-pgbouncer.yaml for why
-  # that matters at 50 workers.
-  SUNLIT_DB_HOST: "pgbouncer"
-  SUNLIT_DB_PORT: "6432"
-  SUNLIT_DB_NAME: "city_data"
+  # ---- Coordinator (control plane) -----------------------------------------
+  # Points at PgBouncer, not PostgreSQL directly. Claim/heartbeat/complete is
+  # thousands of tiny transactions from 50 clients, which is exactly what a
+  # transaction pooler is for. See 25-pgbouncer.yaml.
+  SUNLIT_COORD_HOST: "pgbouncer"
+  SUNLIT_COORD_PORT: "6432"
+  SUNLIT_COORD_DB: "sunlit_coord"
+
+  # ---- Data shards ---------------------------------------------------------
+  # Reached DIRECTLY, bypassing the pooler. A transaction pooler in a sustained
+  # bulk-COPY path would be a single-threaded process relaying the fleet's
+  # ~700 MB/s — it would become the bottleneck the cluster exists to remove. And it
+  # would be solving nothing: sharding already holds each instance at ten backends.
+  #
+  # {i} is substituted with the shard ordinal. This resolves through the headless
+  # Service in 20-postgres-cluster.yaml, which is why it must NOT be a
+  # load-balancing Service: a worker needs one SPECIFIC instance, the one owning its
+  # section, and spreading a section's writes across ten would fail on a missing
+  # partition every time.
+  SUNLIT_SHARD_HOST_TEMPLATE: "sunlit-shard-{i}.sunlit-shards"
+  SUNLIT_SHARD_PORT: "5432"
+  SUNLIT_SHARD_DB_TEMPLATE: "sunlit_shard_{i}"
+  SUNLIT_SHARD_COUNT: "10"
+
   SUNLIT_DB_USER: "admin"
 
   # ---- Lease / heartbeat ---------------------------------------------------
-  # Lease must exceed the worst-case single-task duration, or a healthy worker
-  # loses its lease mid-task and the work is done twice. A June shard-day is the
-  # long pole; 900 s carries generous headroom over the ~200 s expected.
+  # The lease must exceed the worst-case single-task duration or a healthy worker
+  # loses its lease mid-task and the work is done twice. A section-window is ~1.8 s
+  # of raycasting plus a flush; 900 s is enormous headroom, and headroom is free here
+  # because the reaper only acts on tasks that have genuinely stopped reporting.
   SUNLIT_LEASE_SECONDS: "900"
-  # Renewed 30x per lease window, so ~29 consecutive heartbeat failures are
-  # needed before a live worker is declared dead.
+  # Renewed 30x per lease window, so ~29 consecutive heartbeat failures are needed
+  # before a live worker is declared dead.
   SUNLIT_HEARTBEAT_SECONDS: "30"
 
   # ---- Drain behaviour -----------------------------------------------------
-  # 6 empty polls x 10 s = ~60 s of confirmed-empty queue before a pod exits.
-  # Long enough that a worker does not quit while peers still hold tasks that
-  # might fail back to pending and need collecting.
+  # 12 empty polls x 10 s = ~120 s of nothing claimable before a pod exits.
+  #
+  # Deliberately double v1's, because an empty claim now means one of two very
+  # different things: the run is finished, OR every shard is at its admission cap and
+  # this worker is waiting its turn for database capacity. The second is the healthy
+  # steady state whenever the fleet is larger than shards x cap, so exiting on it
+  # would shrink the fleet mid-run.
   SUNLIT_EMPTY_POLL_SECONDS: "10"
-  SUNLIT_MAX_EMPTY_POLLS: "6"
+  SUNLIT_MAX_EMPTY_POLLS: "12"
 
   # ---- Simulation ----------------------------------------------------------
-  # MUST match db_pipeline_initializer.py's GLOBAL_ELEVATION and the value pinned
-  # in meo_runs.config. The worker refuses to start on a mismatch.
+  # MUST match db_pipeline_initializer.py's GLOBAL_ELEVATION and the value pinned in
+  # meo_runs.config. The worker refuses to start on a mismatch.
   SUNLIT_GLOBAL_ELEVATION: "-112.0"
+
+  # A CORRECTNESS parameter, not a performance one. Near the horizon a ray must cross
+  # kilometres of city, where float precision degrades and the ray can escape the
+  # mesh entirely and falsely report SUNLIT. It also bounds the shadow halo exactly
+  # (200 m / tan 5deg = 2,286 m), which is what makes per-section tasks independent —
+  # so changing it changes the sharding argument as well as the data.
   SUNLIT_SUN_ANGLE_THRESHOLD: "5.0"
+
   SUNLIT_CITY: "Manhattan"
   SUNLIT_SOLAR_YEAR: "2026"
 
-  # ---- The big one ---------------------------------------------------------
-  # false  -> combiner only. Writes ~2 GB of edge aggregates. THE DEFAULT.
-  # true   -> also persists ~110 GB of per-sample booleans.
-  # Flipping this to true increases write volume ~53x and is the single fastest
-  # way to turn a 12-minute run into a multi-hour one. Only enable when an
-  # analysis genuinely needs sub-edge resolution.
-  SUNLIT_EMIT_RAW: "false"
+  # Lifted so the road surface never shadows its own sample. Identical to v1's, kept
+  # that way so the two pipelines produce comparable numbers.
+  SUNLIT_RAY_ORIGIN_LIFT: "3.0"
+  # Must exceed the longest sightline to the sun through the city. Too short reports
+  # a sample as sunlit because the ray stopped before the building shading it.
+  SUNLIT_MAX_RAY_DISTANCE: "10000.0"
+  # Only used to report the halo at boot.
+  SUNLIT_MAX_BUILDING_METRES: "200.0"
 
-  # Rows buffered before a COPY flush. 250k CSV rows is roughly 15 MB in flight —
-  # large enough to amortise the round trip, small enough that 50 workers doing it
-  # simultaneously do not spike the database's receive buffers.
-  SUNLIT_COPY_BATCH_ROWS: "250000"
+  # ---- Section grid --------------------------------------------------------
+  # A THREE-LANGUAGE CONTRACT: meo_section_id() in SQL, SectionGrid.section_id in
+  # Python, SectionGrid.SectionId in C#. If they disagree by one, a worker writes
+  # rows into a neighbouring section's partition — nothing fails, the data is simply
+  # wrong, and it stays wrong until someone notices a street with two contradictory
+  # exposure profiles.
+  #
+  # plan_tasks.py derives these from the graph's own extent and freezes them into
+  # meo_runs.config; VerifyRunCompatibility() refuses to start a worker that
+  # disagrees. The values here must therefore match what the planner reported.
+  SUNLIT_SECTION_ORIGIN_X: "0.0"
+  SUNLIT_SECTION_ORIGIN_Z: "0.0"
+  SUNLIT_SECTION_METERS: "1000.0"
+  SUNLIT_SECTION_COLS: "128"
+
+  # ---- Buffer sizing -------------------------------------------------------
+  # Every persistent buffer in the sampler and the writer is sized from these ONCE at
+  # boot and reused for the pod's whole life — that is what makes the raycast path
+  # allocation-free and a pod's RSS flat. Raising them costs memory permanently;
+  # exceeding them fails the task with a clear message rather than reallocating.
+  #
+  # Manhattan's densest square kilometre holds ~4,400 sample points. 16,384 leaves
+  # room for a 3.7x denser city at ~2.6 MB of buffers.
+  SUNLIT_MAX_SECTION_SAMPLES: "16384"
+  # 6 windows over 03:00-21:00 at 3-minute steps.
+  SUNLIT_MAX_STEPS_PER_WINDOW: "60"
+  # Rays per job-system batch. At the default of 1 the job system would create
+  # thousands of jobs per timestep and spend longer scheduling than raycasting.
+  SUNLIT_MIN_COMMANDS_PER_JOB: "64"
 
   # ---- Layer masks (raw ints; no Inspector in a headless build) -------------
   # Recompute for your scene: mask = sum(1 << layerIndex) for every shadow-casting
-  # layer. 0xFFFFFFFF (all layers) is a safe default but slower — the raycast
-  # cannot skip whole BVH subtrees. Narrow it to buildings+ground for real runs.
+  # layer. -1 (all layers) is a safe default but slower — the raycast cannot skip
+  # whole BVH subtrees. Narrow it to buildings + ground for real runs.
   SUNLIT_SHADOW_CASTER_MASK: "-1"
   SUNLIT_GROUND_BLOCKER_MASK: "0"
 
   # ---- Safety --------------------------------------------------------------
-  # Abort a task exceeding this so one pathological shard cannot hold a worker
-  # slot indefinitely. Comfortably above the ~200 s expected worst case.
+  # Abort a task exceeding this so one pathological section cannot hold a worker slot
+  # — or, worse, one of its shard's six admission slots — indefinitely.
   SUNLIT_TASK_TIMEOUT_SECONDS: "1800"
   SUNLIT_DB_WAIT_SECONDS: "300"
   SUNLIT_VERBOSE: "false"
 
   # ---- Unity runtime -------------------------------------------------------
-  # IL2CPP/.NET honours these. Server GC is throughput-oriented (per-core heaps)
-  # rather than latency-oriented, which is exactly right for a batch worker.
+  # These must be set before the runtime starts, which is why they are env and not
+  # code. Server GC is throughput-oriented (per-core heaps) rather than
+  # latency-oriented — exactly right for a batch worker.
   DOTNET_gcServer: "1"
-  # Concurrent GC off: background collection steals CPU from the raycast loop and
-  # we have no latency requirement to protect.
+  # Concurrent GC off: background collection steals CPU from the job system's
+  # raycast workers, and there is no latency requirement to protect. The sampler is
+  # allocation-free in its steady state, so there should be nothing to collect.
   DOTNET_gcConcurrent: "0"
 ---
 # =============================================================================
@@ -86,15 +150,20 @@ data:
 #
 # Committed with placeholders so the manifest set is complete and self-describing.
 # In production, supply it from outside git — sealed-secrets, External Secrets
-# Operator, Vault Agent injector, or a one-off `kubectl create secret`:
+# Operator, Vault Agent injector, or a one-off:
 #
 #   kubectl -n sunlightcity create secret generic sunlit-db-credentials \
 #       --from-literal=SUNLIT_DB_PASSWORD='...' \
 #       --from-literal=PGBOUNCER_AUTH_PASSWORD='...'
 #
 # stringData (not data) so the values are human-readable here; Kubernetes
-# base64-encodes them on write. Note that base64 is encoding, NOT encryption —
-# a Secret is only as protected as the cluster's RBAC and etcd encryption.
+# base64-encodes them on write. Note that base64 is ENCODING, NOT ENCRYPTION — a
+# Secret is only as protected as the cluster's RBAC and etcd encryption.
+#
+# One password for the whole cluster. Per-shard credentials would be more rigorous
+# but would buy nothing: every instance holds a slice of the same dataset with the
+# same sensitivity, and it would make the FDW user mappings eleven secrets to rotate
+# in lockstep instead of one.
 # =============================================================================
 apiVersion: v1
 kind: Secret
