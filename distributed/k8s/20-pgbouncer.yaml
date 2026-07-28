@@ -1,0 +1,214 @@
+# =============================================================================
+# PgBouncer — connection pooler between the fleet and PostgreSQL.
+#
+# WHY THIS EXISTS
+# ---------------
+# Each PostgreSQL backend is a full OS process with its own ~10 MB of private
+# memory plus a share of work_mem per sort node. 50 workers each holding a
+# connection is tolerable; the problem is the SHAPE of their usage:
+#
+#   * A worker holds its connection for the whole task (minutes) but is only
+#     actively talking to the database for a few seconds of it — the rest is
+#     raycasting. Without pooling, 50 backends sit idle burning memory while the
+#     fleet computes.
+#   * Pod churn (retries, spot reclamation, scale changes) means connection
+#     establishment is continuous. Postgres fork-per-connection makes that
+#     comparatively expensive; PgBouncer's accept loop makes it trivial.
+#
+# POOL MODE: transaction, NOT session
+# -----------------------------------
+# transaction mode returns the backend to the pool at COMMIT, so 50 workers share
+# far fewer backends. This is safe for our workload only because of a specific
+# property, worth stating explicitly:
+#
+#   COPY FROM STDIN is transaction-scoped, and the worker performs
+#   CREATE staging -> COPY -> promote -> COMMIT as ONE transaction. The whole
+#   critical section is inside a single transaction, so it holds one backend for
+#   its duration and releases it cleanly.
+#
+# What transaction mode would BREAK, and which this pipeline consequently avoids:
+#   * session-level SET (we use SET inside the transaction, or per-statement)
+#   * TEMP tables spanning transactions (we use named UNLOGGED staging instead —
+#     this is a large part of why the staging tables are named rather than TEMP)
+#   * advisory locks held across transactions (we use lease rows instead)
+#   * prepared statements — hence server_reset_query and the Npgsql setting note below
+#
+# NOTE for the C# side: Npgsql must not use implicit statement preparation with a
+# transaction-mode pooler. The worker's connection string sets Pooling=false and
+# does not enable Max Auto Prepare, so this is already satisfied.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+  namespace: sunlightcity
+data:
+  pgbouncer.ini: |
+    [databases]
+    ; Explicit target; * would let a client pick any database.
+    city_data = host=postgres port=5432 dbname=city_data
+
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+
+    auth_type = scram-sha-256
+    auth_file = /etc/pgbouncer/userlist.txt
+
+    ; ---- Pooling ----------------------------------------------------------
+    pool_mode = transaction
+
+    ; Backends per (database, user). Sized well below the fleet size on purpose:
+    ; workers are compute-bound and only intermittently need a backend, so 25
+    ; backends comfortably serve 50 workers. This is the number that actually
+    ; protects PostgreSQL's memory.
+    default_pool_size = 25
+
+    ; Burst headroom for the reduce phase, when several long aggregate queries
+    ; genuinely do want concurrent backends.
+    reserve_pool_size = 10
+    reserve_pool_timeout = 5
+
+    ; Cap total client connections. Above the fleet size so a rolling replacement
+    ; never gets refused, but bounded so a runaway client cannot exhaust fds.
+    max_client_conn = 400
+    max_db_connections = 40
+
+    ; ---- Timeouts ---------------------------------------------------------
+    ; 0 = no limit. The promote step's INSERT..SELECT and the reduce phase's index
+    ; builds legitimately run for minutes; any finite query_timeout here would
+    ; sever them mid-flight and, worse, do so invisibly from the worker's side.
+    query_timeout = 0
+    query_wait_timeout = 300
+
+    ; Recycle idle backends so a scaled-down fleet does not pin memory.
+    server_idle_timeout = 120
+    server_lifetime = 3600
+
+    ; Detect a dead client (killed pod) and free its backend promptly.
+    client_idle_timeout = 0
+    client_login_timeout = 30
+
+    ; ---- Correctness with transaction pooling -----------------------------
+    ; Wipe per-session state before reuse, so one worker can never observe
+    ; another's SET values or leftover prepared statements. DISCARD ALL is the
+    ; blunt, correct choice.
+    server_reset_query = DISCARD ALL
+    server_reset_query_always = 1
+
+    ; Fail fast rather than silently degrade if a client needs session features.
+    ignore_startup_parameters = extra_float_digits,options
+
+    ; ---- Observability ----------------------------------------------------
+    ; Connection churn logging is off: at 50 workers it is pure noise. Stats every
+    ; 30 s is what you actually watch (`SHOW POOLS` via the admin console).
+    log_connections = 0
+    log_disconnections = 0
+    log_pooler_errors = 1
+    stats_period = 30
+    admin_users = admin
+    stats_users = admin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: pgbouncer
+spec:
+  selector:
+    app.kubernetes.io/name: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 6432
+      targetPort: 6432
+  # Headless would defeat the purpose: we want the Service to load-balance across
+  # PgBouncer replicas.
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: pgbouncer
+spec:
+  # 2 replicas: PgBouncer is single-threaded, so a second replica adds both
+  # throughput and availability. Note default_pool_size is PER REPLICA, so total
+  # backends is 2 x 25 = 50 — still comfortably inside max_connections=200.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pgbouncer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pgbouncer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70          # 'postgres' in the pgbouncer image
+        runAsGroup: 70
+        fsGroup: 70
+      # Keep the two replicas off the same node so a node loss cannot take the
+      # whole pooler down mid-run.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: pgbouncer
+      containers:
+        - name: pgbouncer
+          image: edoburu/pgbouncer:1.22.1
+          ports:
+            - containerPort: 6432
+              name: pgbouncer
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: admin
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sunlit-db-credentials
+                  key: SUNLIT_DB_PASSWORD
+            - name: AUTH_TYPE
+              value: scram-sha-256
+            - name: POOL_MODE
+              value: transaction
+            - name: MAX_CLIENT_CONN
+              value: "400"
+            - name: DEFAULT_POOL_SIZE
+              value: "25"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+          # A TCP probe is the right level here: PgBouncer accepting connections IS
+          # its readiness. A SQL probe would consume a pooled backend on every check.
+          readinessProbe:
+            tcpSocket:
+              port: 6432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 6432
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

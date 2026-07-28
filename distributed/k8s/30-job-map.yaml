@@ -1,0 +1,213 @@
+# =============================================================================
+# THE MAP PHASE — 50 headless Unity workers pulling from the lease queue.
+#
+# READ THIS BEFORE CHANGING parallelism/completions
+# -------------------------------------------------
+# This Job uses `completions` == `parallelism` with a PULL QUEUE, which is a
+# deliberate and slightly unusual combination. The reasoning:
+#
+#   * Work is NOT bound to a pod index. Each pod loops claiming tasks until the
+#     queue is dry, then exits 0. So `completions: 50` does not mean "50 tasks",
+#     it means "50 workers each ran to a clean drain".
+#
+#   * This is the "work queue with a fixed pool" pattern. It self-balances: a pod
+#     on a fast node simply completes more tasks. With an Indexed Job the
+#     assignment would be static and the makespan would be set by the slowest
+#     single shard while 49 pods idled.
+#
+#   * `completions` is set (rather than left null for a pure worker-queue Job)
+#     so the Job object itself reports completion, which is what a CI pipeline or
+#     Argo Workflow gates the reduce phase on.
+#
+# To scale: change BOTH values together. Scaling parallelism alone leaves the Job
+# waiting forever for completions that will never arrive.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sunlit-map
+  namespace: sunlightcity
+  labels:
+    app.kubernetes.io/name: sunlightcity
+    app.kubernetes.io/component: map-worker
+spec:
+  parallelism: 50
+  completions: 50
+
+  # A pod that fails is retried, but the LEASE is what actually protects the work:
+  # a dead pod's task returns to the queue after lease expiry regardless of whether
+  # Kubernetes replaces the pod. backoffLimit therefore guards against a
+  # systematically broken image (bad config, missing StreamingAssets), not against
+  # transient task failures — those are handled by meo_tasks.max_attempts.
+  #
+  # 6 per-index retries: generous enough to ride out node churn and spot
+  # reclamation, tight enough that a genuinely broken image fails the Job in
+  # minutes rather than retrying forever.
+  backoffLimit: 6
+
+  # Hard ceiling on the whole phase. Without this a wedged run holds cluster
+  # capacity indefinitely. 4 h is ~20x the expected 12 min.
+  activeDeadlineSeconds: 14400
+
+  # Keep finished pods for 1 h so logs are retrievable, then let the TTL
+  # controller clean up. Without this, 50 Completed pods accumulate per run.
+  ttlSecondsAfterFinished: 3600
+
+  # Pod failures are counted per index rather than globally in newer APIs; this
+  # keeps behaviour predictable across versions.
+  completionMode: NonIndexed
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sunlightcity
+        app.kubernetes.io/component: map-worker
+      annotations:
+        # Prevent the cluster autoscaler from evicting a worker mid-task to
+        # consolidate nodes. The lease would recover it, but re-doing ~3 minutes of
+        # raycasting for a bin-packing win is a bad trade.
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      # Never restart in place: a fresh pod gets a clean lease and a clean engine.
+      # Restarting the same container would reuse a worker_id whose lease may still
+      # be held, which the fencing check would then reject anyway.
+      restartPolicy: Never
+
+      # Time for the worker to finish its current timestep, flush, and release its
+      # lease after SIGTERM. Must exceed the flush duration or Kubernetes SIGKILLs
+      # mid-COPY and the task waits out its full lease instead.
+      terminationGracePeriodSeconds: 60
+
+      # ---- Security -------------------------------------------------------
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      # ---- Scheduling -----------------------------------------------------
+      # Spread workers across nodes. Not for availability (this is a batch job) but
+      # for THROUGHPUT: co-locating raycast-bound workers on one node makes them
+      # contend for memory bandwidth and last-level cache, which measurably slows
+      # BVH traversal. One worker per node per 4 cores is the target shape.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway   # throughput hint, not a hard requirement
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: map-worker
+
+      # Uncomment to place the fleet on spot/preemptible nodes. The lease-based
+      # recovery model makes this workload an unusually good fit for spot: a
+      # reclaimed task costs at most one task's work, and the entrypoint releases
+      # the lease on SIGTERM so recovery is immediate rather than lease-timeout bound.
+      #
+      # nodeSelector:
+      #   cloud.google.com/gke-spot: "true"
+      # tolerations:
+      #   - key: cloud.google.com/gke-spot
+      #     operator: Equal
+      #     value: "true"
+      #     effect: NoSchedule
+
+      containers:
+        - name: worker
+          image: sunlightcity/worker:v1
+          imagePullPolicy: IfNotPresent
+
+          envFrom:
+            - configMapRef:
+                name: sunlit-worker-config
+            - secretRef:
+                name: sunlit-db-credentials
+
+          env:
+            # Which run's tasks to claim. Overridden per invocation — the
+            # orchestrator patches this, or kustomize sets it per overlay.
+            - name: SUNLIT_RUN_ID
+              value: "run-2026-annual"
+
+            # Pod name as worker id: already unique, and it makes a leased task
+            # traceable straight to a pod's logs. Far more useful than a random
+            # GUID when debugging a stuck shard.
+            - name: SUNLIT_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            # Surfaced for log correlation.
+            - name: SUNLIT_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
+          resources:
+            requests:
+              # 4 cores: the raycast loop is single-threaded (PhysX queries must run
+              # on Unity's main thread), so the extra cores serve IL2CPP's server GC,
+              # the Npgsql socket, and the OS. Requesting 4 also keeps the scheduler
+              # from packing workers so densely that they thrash shared cache.
+              cpu: "4"
+              # The city mesh + BVH dominates. The combiner's accumulator is ~193 KB
+              # and the raw buffer is capped by SUNLIT_COPY_BATCH_ROWS, so memory is
+              # essentially constant in run length — that is the whole point of the
+              # bounded-flush design.
+              memory: 8Gi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: "6"
+              # Only ~1.5x the request. A worker that grows past this has a leak, and
+              # OOMKilling it is the correct response: the lease returns its task and
+              # a fresh pod picks it up. A generous limit would instead let one pod
+              # slowly consume the node and destabilise its neighbours.
+              memory: 12Gi
+              ephemeral-storage: 4Gi
+
+          # ---- Probes ----
+          #
+          # NO livenessProbe, deliberately. Liveness would only prove the process
+          # exists; the lease heartbeat already proves it is making PROGRESS, which
+          # is strictly stronger. Adding a liveness probe here would introduce a
+          # second, weaker failure detector that can only produce false positives
+          # (killing a healthy worker in a long GC pause).
+          #
+          # A startupProbe IS useful: it distinguishes "still booting the engine and
+          # loading the mesh" from "hung", so the Job's failure accounting is honest.
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                # The player writes this once the queue connection is verified.
+                - "test -f /tmp/sunlit-ready"
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            # 5 min to boot: engine start + mesh load + BVH build on a cold page cache.
+            failureThreshold: 60
+            timeoutSeconds: 3
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            # readOnlyRootFilesystem means Unity needs explicit writable scratch.
+            # emptyDir (node-local) rather than a PVC: this is throwaway per-pod
+            # state, and a PVC would add a provisioning round trip to every pod start.
+            - name: tmp
+              mountPath: /tmp
+            - name: unity-home
+              mountPath: /home/sunlit
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: unity-home
+          emptyDir:
+            sizeLimit: 1Gi
