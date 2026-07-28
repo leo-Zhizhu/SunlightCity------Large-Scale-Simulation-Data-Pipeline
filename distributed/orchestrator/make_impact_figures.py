@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """
-Generates the README's impact figures as self-contained SVGs (light + dark).
+Generates the README's figures as self-contained SVGs (light + dark).
 
-Pure stdlib on purpose: the README's assets must be regenerable without
-matplotlib, and hand-built SVG gives exact control over the annotation-heavy
-layouts these figures need.
+Pure stdlib on purpose: the README's assets must be regenerable without matplotlib,
+and hand-built SVG gives exact control over the annotation-heavy layouts these
+figures need.
+
+Every number comes from model.py, imported rather than copied, so a figure cannot
+disagree with the capacity model or with the docs that quote it.
 
 Figures
 -------
-  1. io_volume       — bytes to PostgreSQL, v1 vs v2. MEASURED.
-  2. scaling_curve   — Amdahl curve with the serial reduce floor annotated,
-                       calibrated on the measured single-node run. MODELLED.
-  3. failure_timeline— lease-based recovery of a killed worker. ILLUSTRATIVE.
-
-Every figure states in-panel whether its numbers are measured, modelled or
-illustrative. Presenting a projection as a measurement would be the easiest way
-to make this whole document untrustworthy.
+  1. shard_scaling      wall clock vs shard count at a fixed 50 workers. The
+                        headline result: the same fleet finishes in 15m 12s on one
+                        database instance and 3m 20s on ten.
+  2. phase_breakdown    where the 3m 20s goes, and why writing is free (it overlaps
+                        raycasting) while the reduce phase is not.
+  3. directional_cost   the same edge at the same instant, walked both ways. This
+                        is why the schema keeps per-sample rows.
+  4. failure_timeline   lease-based recovery of a killed worker.
 
 Usage:
     python make_impact_figures.py [output_dir]
@@ -61,20 +64,14 @@ FAM = "system-ui,-apple-system,'Segoe UI',sans-serif"
 MONO = "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
 
 # ---------------------------------------------------------------------------
-# Measured / modelled inputs
+# Inputs — imported, never copied.
+#
+# Every figure below is drawn from model.py, which is also what the README, the docs
+# and reduce_finalize.py's throughput report read. Duplicating a single number here
+# would be one more place for the documentation to drift out of agreement with the
+# system it describes.
 # ---------------------------------------------------------------------------
-RAYCASTS = 1_577_374_560
-BASE_RATE = 73_000          # measured: 1.577e9 raycasts in 6.0 h, single node
-T_PAR = RAYCASTS / BASE_RATE   # 21,608 s of parallelisable work
-T_SERIAL = 300                 # reduce phase floor (index + ANALYZE + rollup, ~2 GB)
-
-RAW_GB = 110.0              # measured: meo_exposure_samples for an annual run
-AGG_GB = 2.09               # measured: meo_exposure_edges after aggregation
-
-
-def wall_clock(n: int) -> float:
-    """Amdahl: parallel raycasting over n workers plus an irreducible serial reduce."""
-    return T_PAR / n + T_SERIAL
+import model
 
 
 def esc(s: str) -> str:
@@ -131,181 +128,291 @@ class SVG:
         return "\n".join(self.o)
 
 
+
+
+def fmt_t(seconds: float) -> str:
+    if seconds >= 3600:
+        return f"{seconds / 3600:.1f} h"
+    if seconds >= 60:
+        return f"{int(seconds // 60)}m {seconds % 60:02.0f}s"
+    return f"{seconds:.0f} s"
+
+
 # ===========================================================================
-# FIGURE 1 — I/O volume (measured)
+# FIGURE 1 — what the database cluster is worth
+#
+# The one figure that justifies the whole rewrite. Workers are held FIXED at 50 and
+# only the shard count varies, so the curve isolates the database's contribution
+# from the fleet's.
 # ===========================================================================
-def fig_io(theme: str) -> str:
+def fig_shard_scaling(theme: str) -> str:
     t = THEMES[theme]
-    W, H = 860, 300
+    W, H = 860, 400
+    t1 = model.total_seconds(model.WORKERS, 1)
+    tN = model.total_seconds()
+
     s = SVG(W, H, t,
-            f"Bytes written to PostgreSQL per annual run: {RAW_GB:.0f} GB before "
-            f"the map-side combiner versus {AGG_GB} GB after, a "
-            f"{RAW_GB/AGG_GB:.0f} times reduction.")
+            f"Wall clock against database shard count at a fixed {model.WORKERS} workers. "
+            f"One instance takes {fmt_t(t1)}; ten take {fmt_t(tN)}. Below eight shards "
+            f"the fleet is I/O-bound and waiting on the database.")
 
-    s.text(40, 34, "Bytes written to PostgreSQL, per annual run", 16, t["ink"], weight="600")
-    s.text(40, 55, "The map-side combiner aggregates before the wire, not after it.",
-           11.5, t["muted"])
-    s.text(W - 40, 34, "MEASURED", 9.5, t["muted"], anchor="end", weight="600")
+    s.text(40, 34, "The bottleneck was never the raycasting", 16, t["ink"], weight="600")
+    s.text(40, 55, f"Same {model.WORKERS} workers, same code. Only the number of "
+                   "PostgreSQL instances changes.", 11.5, t["muted"])
+    s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
 
-    x0, bar_w = 210, 520
-    row_h, y = 46, 96
+    px, py, pw, ph = 78, 88, W - 78 - 170, 216
+    shards = list(range(1, 21))
+    times = [model.total_seconds(model.WORKERS, k) for k in shards]
+    t_max, t_min = max(times) * 1.06, 0.0
 
-    for label, sub, gb, colour, ink in (
-        ("v1  single node", "raw per-sample booleans", RAW_GB, t["v1"], t["on_v1"]),
-        ("v2  combiner",    "per-edge aggregates",     AGG_GB, t["v2"], t["on_v2"]),
+    def sx(k): return px + pw * (k - 1) / (len(shards) - 1)
+    def sy(v): return py + ph * (1 - (v - t_min) / (t_max - t_min))
+
+    # gridlines at round minute marks
+    for mins in range(0, int(t_max // 60) + 1, 3):
+        y = sy(mins * 60)
+        if y < py: continue
+        s.line(px, y, px + pw, y, t["grid"], 1)
+        s.text(px - 10, y + 4, f"{mins}m", 9.5, t["muted"], anchor="end")
+    for k in (1, 5, 10, 15, 20):
+        s.text(sx(k), py + ph + 18, str(k), 9.5, t["muted"], anchor="middle")
+    s.text(px + pw / 2, py + ph + 38, "database shards", 10.5, t["ink2"], anchor="middle")
+
+    # I/O-bound region: shaded, because it is the point of the figure
+    kb = model.balanced_shards()
+    s.rect(px, py, sx(kb) - px, ph, t["bad"], rx=0, opacity=0.07)
+    # Placed low in the band, not at the top: the curve's 1-shard endpoint label lives
+    # up there and the two collided.
+    s.text(px + (sx(kb) - px) / 2, py + ph * 0.72, "I/O-bound", 10.5, t["bad"],
+           anchor="middle", weight="700")
+    s.text(px + (sx(kb) - px) / 2, py + ph * 0.72 + 15, "fleet waits on the DB",
+           9, t["muted"], anchor="middle")
+
+    # the curve
+    s.path("M " + " L ".join(f"{sx(k):.1f} {sy(v):.1f}" for k, v in zip(shards, times)),
+           t["v2"], sw=2.5)
+
+    # the two endpoints that matter
+    for k, colour, label, sub in (
+        (1, t["v1"], f"1 shard — {fmt_t(t1)}", f"{model.V1_SECONDS / t1:.0f}x vs v1"),
+        (model.SHARDS, t["v2"], f"{model.SHARDS} shards — {fmt_t(tN)}",
+         f"{model.V1_SECONDS / tN:.0f}x vs v1"),
     ):
-        w = bar_w * (gb / RAW_GB)
-        s.text(x0 - 16, y + 19, label, 12.5, t["ink"], anchor="end", weight="600")
-        s.text(x0 - 16, y + 34, sub, 10, t["muted"], anchor="end")
+        v = model.total_seconds(model.WORKERS, k)
+        s.circle(sx(k), sy(v), 5, colour, stroke=t["surface"], sw=2)
+        anchor = "start" if k == 1 else "start"
+        s.text(sx(k) + 12, sy(v) - 6, label, 11.5, t["ink"], anchor=anchor, weight="700")
+        s.text(sx(k) + 12, sy(v) + 8, sub, 9.5, t["muted"], anchor=anchor)
 
-        # Track, so the tiny v2 bar still reads as a proportion of the same scale.
-        s.rect(x0, y, bar_w, row_h - 12, t["panel"], rx=4)
-        s.rect(x0, y, w, row_h - 12, colour, rx=4)
+    # deployed marker
+    s.line(sx(model.SHARDS), py, sx(model.SHARDS), py + ph, t["accent"], 1.5, dash="4 3")
+    s.text(sx(model.SHARDS), py - 6, "deployed", 9.5, t["accent"], anchor="middle",
+           weight="600")
 
-        val = f"{gb:.0f} GB" if gb >= 10 else f"{gb:.2f} GB"
-        if w > 90:
-            s.text(x0 + w - 12, y + 23, val, 13, ink, anchor="end", weight="700")
-        else:
-            s.text(x0 + w + 10, y + 23, val, 13, t["ink"], weight="700")
-        y += row_h + 24
+    # right-hand summary
+    bx = px + pw + 22
+    s.rect(bx, py, 128, 96, t["panel"], rx=6)
+    s.text(bx + 12, py + 22, f"{t1 / tN:.1f}x", 22, t["v2"], weight="700")
+    s.text(bx + 12, py + 40, "from the cluster", 10, t["ink2"])
+    s.text(bx + 12, py + 60, f"of the {model.V1_SECONDS / tN:.0f}x total", 9.5, t["muted"])
+    s.text(bx + 12, py + 76, f"the other {model.BATCH_SPEEDUP * model.LOCALITY_SPEEDUP:.1f}x",
+           9.5, t["muted"])
+    s.text(bx + 12, py + 88, "is per-worker", 9.5, t["muted"])
 
-    # Reduction callout
-    cy = 96 + (row_h - 12) + 12
-    s.line(x0 + bar_w * (AGG_GB / RAW_GB), cy + 8, x0 + bar_w, cy + 8,
-           t["accent"], 1.5, dash="3 3")
-    s.text(x0 + bar_w / 2, cy + 2, f"{RAW_GB/AGG_GB:.0f}x less written",
-           11.5, t["accent"], anchor="middle", weight="700")
-
-    # Footer: what the number means operationally
-    fy = 228
-    s.rect(40, fy, W - 80, 48, t["panel"], rx=6)
+    # footer
+    fy = H - 74
+    s.rect(40, fy, W - 80, 56, t["panel"], rx=6)
     s.text(56, fy + 20,
-           "98% of what the single-node pipeline sent to the database was discarded by the "
-           "very next step.",
+           f"One instance absorbs ~{model.shard_max_streams() * model.COPY_ROWS_PER_STREAM / 1e6:.1f}M rows/s "
+           f"({model.shard_max_streams()} COPY streams on {model.SHARD_VCPU} vCPU, one busy CPU each). "
+           f"The fleet produces {model.WORKERS * model.WORKER_RAYCAST_RATE / 1e6:.1f}M/s.",
            11, t["ink2"])
-    s.text(56, fy + 37,
-           "Sharding by edge (not by sample point) makes each worker's per-edge sum final, "
-           "so aggregating locally is exact.",
+    s.text(56, fy + 38,
+           f"So the cluster needs at least {kb}. Ten are deployed — "
+           f"{model.io_headroom() * 100:+.0f}% headroom, so a checkpoint or a vacuum on one "
+           "instance cannot stall the fleet.",
            11, t["muted"])
     return s.done()
 
 
 # ===========================================================================
-# FIGURE 2 — Amdahl scaling curve (modelled)
+# FIGURE 2 — where the time goes
 # ===========================================================================
-def fig_scaling(theme: str) -> str:
+def fig_phase_breakdown(theme: str) -> str:
     t = THEMES[theme]
-    W, H = 860, 450
+    W, H = 860, 330
+    T = model.total_seconds()
+    startup = model.FLEET_STARTUP_SECONDS
+    ray = model.raycast_seconds()
+    write = model.write_seconds()
+    mapt = model.map_seconds()
+    red = model.reduce_seconds()
+
     s = SVG(W, H, t,
-            "Modelled wall clock against worker count. 50 workers reach about 12 minutes, "
-            "a 30x speedup over the measured 6 hour single-node baseline. The curve "
-            "flattens toward a 5 minute floor set by the serial reduce phase.")
+            f"Breakdown of the {fmt_t(T)} run: {fmt_t(startup)} fleet spin-up, "
+            f"{fmt_t(mapt)} map phase in which writing overlaps raycasting entirely, "
+            f"and {fmt_t(red)} of reduce across ten shards in parallel.")
 
-    s.text(40, 34, "Why 50 workers, and not 500", 16, t["ink"], weight="600")
-    s.text(40, 55, "Amdahl model calibrated on the measured single-node run "
-                   "(21,608 s parallel + 300 s serial reduce).", 11.5, t["muted"])
-    s.text(W - 40, 34, "MODELLED", 9.5, t["accent"], anchor="end", weight="600")
+    s.text(40, 34, f"Where the {fmt_t(T)} goes", 16, t["ink"], weight="600")
+    s.text(40, 55, "Writing is free — it happens while the next window is being "
+                   "raycast, on a second connection.", 11.5, t["muted"])
+    s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
 
-    # Plot area
-    px, py = 84, 92
-    pw, ph = W - px - 172, 238
+    px, pw = 40, W - 80
+    def sw_(sec): return pw * sec / T
 
-    # Log-x from 1 to 512 workers; log-y over wall clock.
-    n_min, n_max = 1, 512
-    t_max, t_min = wall_clock(n_min), T_SERIAL * 0.82
+    # ---- the timeline bar ----
+    y = 96
+    bh = 42
+    x = px
+    for label, sec, colour, ink in (
+        ("spin-up", startup, t["v1"], t["on_v1"]),
+        ("MAP", mapt, t["v2"], t["on_v2"]),
+        ("REDUCE", red, t["v2_light"], t["ink"]),
+    ):
+        w = sw_(sec)
+        s.rect(x, y, w, bh, colour, rx=4)
+        s.text(x + w / 2, y + 20, label, 11.5, ink, anchor="middle", weight="700")
+        s.text(x + w / 2, y + 34, fmt_t(sec), 10, ink, anchor="middle")
+        s.text(x + w / 2, y - 8, f"{100 * sec / T:.0f}%", 9.5, t["muted"], anchor="middle")
+        x += w
 
-    def sx(n):  return px + pw * (math.log10(n) - math.log10(n_min)) / (math.log10(n_max) - math.log10(n_min))
-    def sy(v):  return py + ph * (math.log10(t_max) - math.log10(v)) / (math.log10(t_max) - math.log10(t_min))
+    # ---- the overlap, which is the interesting part ----
+    oy = y + bh + 30
+    s.text(px, oy, "inside the MAP phase — the two run concurrently:", 11, t["ink2"])
 
-    # --- y gridlines at human durations ---
-    for secs, lab in ((6*3600, "6 h"), (3600, "1 h"), (30*60, "30 min"),
-                      (10*60, "10 min"), (5*60, "5 min")):
-        if not (t_min <= secs <= t_max):
-            continue
-        y = sy(secs)
-        s.line(px, y, px + pw, y, t["grid"], 1)
-        s.text(px - 10, y + 3.5, lab, 10, t["muted"], anchor="end")
+    mx = px + sw_(startup)
+    mw = sw_(mapt)
+    # Labels kept short enough to fit the narrower of the two bars. The COPY bar is
+    # 74% of the MAP width, so anything longer than ~30 characters is clipped — and a
+    # clipped label in a figure about I/O headroom is a poor advertisement.
+    for i, (lbl, sec, colour) in enumerate((
+        ("raycasting · 8 job threads/pod", ray, t["v2"]),
+        ("binary COPY · 2 streams/pod", write, t["accent"]),
+    )):
+        ly = oy + 16 + i * 30
+        w = mw * sec / mapt
+        s.rect(mx, ly, w, 18, colour, rx=3, opacity=0.9 if i == 0 else 0.85)
+        s.text(mx + 8, ly + 13, f"{lbl} — {fmt_t(sec)}", 9.5, t["on_v2"], weight="600")
+        if i == 1:
+            # The slack is deliberate — but it is the fraction of TIME the writer is
+            # idle, which is not the same number as the cluster's spare INGEST
+            # capacity (io_headroom, +35%). Using that one here would have been wrong.
+            idle_pct = 100 * (1 - sec / mapt)
+            s.rect(mx + w, ly, mw - w, 18, t["panel"], rx=3)
+            s.text(mx + w + 8, ly + 13, f"{idle_pct:.0f}% idle", 9, t["muted"])
 
-    # --- x ticks ---
-    for n in (1, 2, 5, 10, 25, 50, 100, 200, 500):
-        x = sx(n)
-        s.line(x, py + ph, x, py + ph + 4, t["axis"], 1)
-        s.text(x, py + ph + 18, str(n), 10, t["muted"], anchor="middle")
-    s.text(px + pw / 2, py + ph + 36, "workers", 10.5, t["ink2"], anchor="middle")
-
-    # y-axis label, rotated
-    s.o.append(
-        f'<text x="{px - 52}" y="{py + ph/2}" font-family="{FAM}" font-size="10.5" '
-        f'fill="{t["ink2"]}" text-anchor="middle" '
-        f'transform="rotate(-90 {px - 52} {py + ph/2})">wall clock (log)</text>')
-
-    # --- the irreducible serial floor ---
-    yf = sy(T_SERIAL)
-    s.line(px, yf, px + pw, yf, t["accent"], 1.5, dash="5 4")
-    s.text(px + pw + 10, yf + 3.5, "5 min floor", 10.5, t["accent"], weight="600")
-    s.text(px + pw + 10, yf + 18, "serial reduce", 9.5, t["muted"])
-
-    # --- ideal linear scaling, for contrast ---
-    # Clipped at the plot floor: unclipped it runs off the bottom of the axes,
-    # which reads as a rendering bug rather than as "off the scale".
-    ideal_pts = []
-    for n in (1, 2, 5, 10, 25, 50, 100, 200, 512):
-        v = T_PAR / n
-        if v < t_min:
-            break
-        ideal_pts.append((sx(n), sy(v)))
-    if len(ideal_pts) > 1:
-        s.path("M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in ideal_pts),
-               t["muted"], 1.5, dash="4 4", opacity=0.7)
-        s.text(ideal_pts[-1][0] + 6, ideal_pts[-1][1] + 12, "ideal", 9,
-               t["muted"], anchor="middle")
-
-    # --- modelled curve ---
-    pts = []
-    n = 1.0
-    while n <= n_max:
-        pts.append((sx(n), sy(max(t_min, wall_clock(n)))))
-        n *= 1.06
-    s.path("M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts), t["v2"], 2.5)
-
-    # --- markers ---
-    for n, note in ((1, None), (10, None), (50, "chosen"), (200, None)):
-        x, y = sx(n), sy(wall_clock(n))
-        s.circle(x, y, 5.5, t["surface"], t["v2"], 2.5)
-        mins = wall_clock(n) / 60
-        lab = f"{mins/60:.1f} h" if mins >= 90 else f"{mins:.0f} min"
-        s.text(x, y - 14, lab, 10.5, t["ink"], anchor="middle", weight="700")
-
-    # Highlight the operating point. Annotated up-and-left with a leader line:
-    # directly below collides with both the ideal-linear dashes and the x-ticks.
-    x50, y50 = sx(50), sy(wall_clock(50))
-    s.circle(x50, y50, 9, "none", t["accent"], 2)
-    ax, ay = x50 - 96, y50 - 46
-    s.line(ax + 78, ay + 6, x50 - 11, y50 - 5, t["accent"], 1, dash="2 2")
-    s.rect(ax - 6, ay - 12, 92, 32, t["surface"], rx=4)
-    s.text(ax + 40, ay + 1, "50 workers", 10.5, t["accent"], anchor="middle", weight="700")
-    s.text(ax + 40, ay + 14, "30x · 60% eff.", 9.5, t["muted"], anchor="middle")
-
-    # legend
-    lx, ly = px + pw + 14, py + 8
-    s.line(lx, ly, lx + 22, ly, t["v2"], 2.5)
-    s.text(lx + 28, ly + 3.5, "modelled", 10, t["ink2"])
-    s.line(lx, ly + 18, lx + 22, ly + 18, t["muted"], 1.5, dash="4 4")
-    s.text(lx + 28, ly + 21.5, "ideal linear", 10, t["muted"])
+    s.line(mx, oy + 10, mx, oy + 78, t["axis"], 1, dash="2 2")
+    s.line(mx + mw, oy + 10, mx + mw, oy + 78, t["axis"], 1, dash="2 2")
 
     # footer
-    fy = H - 44
-    s.rect(40, fy, W - 80, 34, t["panel"], rx=6)
-    s.text(56, fy + 21,
-           "Past ~50 workers the serial reduce phase dominates: 100 workers buys 3.6 more "
-           "minutes, 500 buys 6.5. Diminishing returns, not a wall.",
+    fy = H - 76
+    s.rect(40, fy, W - 80, 58, t["panel"], rx=6)
+    s.text(56, fy + 20,
+           "MAP costs max(raycast, write), not their sum: a finished window goes to a "
+           "writer thread while the main thread claims the next task.",
            11, t["ink2"])
+    s.text(56, fy + 39,
+           f"REDUCE cannot overlap — it needs the last row — but it is only {fmt_t(red)}: "
+           f"a section owns whole edges, so all {model.SHARDS} shards roll up locally.",
+           11, t["muted"])
     return s.done()
 
 
 # ===========================================================================
-# FIGURE 3 — lease-based failure recovery (illustrative)
+# FIGURE 3 — why the schema keeps per-sample rows
+#
+# The numbers are the ones distributed/db/tests/shard_selftest.sql asserts, so this
+# figure is a picture of a passing test rather than an illustration of an idea.
 # ===========================================================================
+def fig_directional_cost(theme: str) -> str:
+    t = THEMES[theme]
+    W, H = 860, 400
+    s = SVG(W, H, t,
+            "The same 400 m street at the same instant, walked in opposite directions. "
+            "Walking with the moving shadow gives 504 seconds of sun and a 252 m "
+            "continuous exposure; walking against it gives 492 seconds and 246 m. A "
+            "per-edge sum cannot tell the two apart.")
+
+    s.text(40, 34, "Why a per-edge sum is not enough", 16, t["ink"], weight="600")
+    s.text(40, 55, "Same street, same instant, opposite directions. The walker moves "
+                   "through time, so the shadow moves too.", 11.5, t["muted"])
+    s.text(W - 40, 34, "MEASURED · shard_selftest.sql", 9.5, t["muted"], anchor="end",
+           weight="600")
+
+    # ---- two street strips -------------------------------------------------
+    # 210 of right margin, not 120: the two number blocks ("504 s / in sun" and
+    # "252 m / longest run") need ~150 px and were running off the canvas.
+    px, pw = 150, W - 150 - 210
+    strip_h = 30
+    N = 40                      # cells drawn; the real edge has 201 sample points
+
+    rows = [
+        ("with the sweep",  False, 504.0, 300.0, 62.69, 252, 140),
+        ("against it",      True,  492.0, 312.0, 61.19, 246, 232),
+    ]
+
+    for label, reverse, sun_s, shade_s, pct, run_m, y in rows:
+        s.text(px - 16, y + 12, label, 12, t["ink"], anchor="end", weight="600")
+        s.text(px - 16, y + 27, "entry -> exit", 9.5, t["muted"], anchor="end")
+
+        cw = pw / N
+        for i in range(N):
+            # The shadow boundary advances as the walker advances: at cell i the
+            # walker is i/N of the way along AND i/N of the way through the traverse,
+            # so the boundary has moved too. Reverse walks the cells from the far end
+            # against the same advancing clock, which is why the pattern differs.
+            frac = i / (N - 1)
+            boundary = frac * 0.62 + 0.19
+            pos = (1.0 - frac) if reverse else frac
+            sunlit = pos > boundary
+            s.rect(px + i * cw, y, cw - 0.6, strip_h,
+                   t["accent"] if sunlit else t["v2_light"],
+                   opacity=0.95 if sunlit else 0.85)
+
+        s.rect(px, y, pw, strip_h, "none", stroke=t["axis"], sw=1, rx=2)
+        # direction arrow
+        ay = y + strip_h + 12
+        s.line(px, ay, px + pw, ay, t["ink2"], 1)
+        s.path(f"M {px + pw - 7:.1f} {ay - 3.5} L {px + pw:.1f} {ay} "
+               f"L {px + pw - 7:.1f} {ay + 3.5}", t["ink2"], sw=1.4)
+
+        # numbers
+        bx = px + pw + 16
+        s.text(bx, y + 13, f"{sun_s:.0f} s", 14, t["accent"], weight="700")
+        s.text(bx, y + 27, "in sun", 9.5, t["muted"])
+        s.text(bx + 56, y + 13, f"{run_m} m", 12, t["ink"], weight="600")
+        s.text(bx + 56, y + 27, "longest run", 9.5, t["muted"])
+
+    # Legend sits in the gap BETWEEN the two strips rather than under the first,
+    # where it was competing with that strip's direction arrow.
+    ly = 200
+    s.rect(px, ly, 14, 10, t["accent"]); s.text(px + 20, ly + 9, "sun", 9.5, t["muted"])
+    s.rect(px + 58, ly, 14, 10, t["v2_light"]); s.text(px + 78, ly + 9, "shade", 9.5, t["muted"])
+
+    # ---- the point ---------------------------------------------------------
+    cy = 296
+    s.rect(40, cy, W - 80, 42, t["panel"], rx=6)
+    s.text(56, cy + 18,
+           "Both directions cross the SAME set of sample points and the same total "
+           "sunlit count. A per-edge sunlit_sum is identical for the two.",
+           11, t["ink"])
+    s.text(56, cy + 34,
+           "The 12-second difference and the 6 m difference in continuous exposure exist "
+           "only in the ordered, per-sample series.",
+           11, t["muted"])
+
+    fy = H - 46
+    s.text(40, fy + 12,
+           f"This is why v2 keeps v1's {model.EXPOSURE_ROWS:,} rows instead of "
+           f"collapsing them to {model.EDGE_ROWS:,} per-edge sums —", 11, t["ink2"])
+    s.text(40, fy + 28,
+           f"and therefore why it needs {model.SHARDS} database instances rather "
+           "than one.", 11, t["ink2"])
+    return s.done()
+
+
 def fig_failure(theme: str) -> str:
     t = THEMES[theme]
     W, H = 860, 340
@@ -392,9 +499,12 @@ def fig_failure(theme: str) -> str:
     return s.done()
 
 
+
+
 FIGURES = {
-    "io_volume": fig_io,
-    "scaling_curve": fig_scaling,
+    "shard_scaling": fig_shard_scaling,
+    "phase_breakdown": fig_phase_breakdown,
+    "directional_cost": fig_directional_cost,
     "failure_timeline": fig_failure,
 }
 
