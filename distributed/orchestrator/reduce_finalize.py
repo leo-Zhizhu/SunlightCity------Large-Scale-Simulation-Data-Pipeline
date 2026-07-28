@@ -2,16 +2,27 @@
 """
 THE REDUCE PHASE — finalises a distributed run.
 
-Runs once after the map fleet drains. Deliberately thin, because the map-side
-combiner already did the aggregation: sharding by EDGE means each worker's
-per-(edge, timestep) sum is final, so there is no shuffle and nothing to merge.
-What remains is verification and index/statistics work.
+Runs once after the map fleet drains. Deliberately thin, and it is worth being
+explicit about why, because in a classic MapReduce this is where the shuffle lives
+and where most of the cost is:
 
-    verify completeness -> build indexes -> ANALYZE -> refresh rollups -> report
+    A SECTION OWNS WHOLE EDGES, assigned by edge midpoint. So every sample point of
+    a given edge is in one section, every section is on one shard, and the rollup
+    GROUP BY (edge_id, datetime) is COMPLETE within a single instance.
+
+There is therefore nothing to merge across shards: no shuffle, no barrier, no
+coordinator gathering partial sums. Ten instances each aggregate their own sixth of
+a billion rows, in parallel, and stop. Had sections been defined by sample-point
+position instead, ~12% of edges would straddle a boundary and this script would have
+needed a distributed sum — and every routing query would have become a cross-shard
+join for the rest of the dataset's life.
+
+    verify completeness -> per-shard rollup + index + ANALYZE -> federation -> report
 
 USAGE
-    python reduce_finalize.py --run-id run-2026-annual --verify --build-indexes --refresh-rollups
+    python reduce_finalize.py --run-id run-2026-annual
     python reduce_finalize.py --run-id run-2026-annual --verify-only
+    python reduce_finalize.py --run-id run-2026-annual --shards 3,7   # just these two
 
 EXIT CODES
     0  finalised successfully
@@ -23,6 +34,7 @@ EXIT CODES
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import os
 import sys
 import time
@@ -33,28 +45,31 @@ try:
 except ImportError:
     sys.exit("psycopg2 is required:  pip install psycopg2-binary")
 
+from cluster import ClusterEndpoints
+import model
+
 
 EXIT_OK, EXIT_ERROR, EXIT_INCOMPLETE, EXIT_INTEGRITY = 0, 1, 2, 3
 
 
-def db_config(args) -> dict:
+def coord_config(args) -> dict:
     return {
-        "host": args.db_host or os.environ.get("SUNLIT_DB_HOST", "localhost"),
-        "port": int(args.db_port or os.environ.get("SUNLIT_DB_PORT", 5432)),
-        "database": args.db_name or os.environ.get("SUNLIT_DB_NAME", "city_data"),
+        "host": args.coord_host or os.environ.get("SUNLIT_COORD_HOST", "localhost"),
+        "port": int(args.coord_port or os.environ.get("SUNLIT_COORD_PORT", 5432)),
+        "database": args.coord_db or os.environ.get("SUNLIT_COORD_DB", "sunlit_coord"),
         "user": args.db_user or os.environ.get("SUNLIT_DB_USER", "admin"),
         "password": args.db_password or os.environ.get("SUNLIT_DB_PASSWORD", "password"),
     }
 
 
 def hr(title: str = "") -> None:
-    print("\n" + "=" * 74)
+    print("\n" + "=" * 78)
     if title:
         print(f"  {title}")
-        print("=" * 74)
+        print("=" * 78)
 
 
-def human(n: int) -> str:
+def human(n: float) -> str:
     for unit in ("", "K", "M", "B"):
         if abs(n) < 1000:
             return f"{n:.0f}{unit}"
@@ -63,19 +78,21 @@ def human(n: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1. COMPLETENESS
+# 1. COMPLETENESS — checked on the coordinator, before anything expensive
 # ---------------------------------------------------------------------------
 def verify_completeness(cur, run_id: str) -> tuple[bool, dict]:
     """
     A run is finalisable only when every task reached 'done'.
 
-    Building indexes over an incomplete dataset is worse than useless: it is
-    expensive, and it produces a dataset that LOOKS finished. Any gap here must
-    stop the pipeline.
+    Rolling up an incomplete dataset is worse than useless: it costs real time and
+    produces something that LOOKS finished. A missing section-window shows up much
+    later as a street with no shade at any hour, which is indistinguishable from a
+    genuinely sunny street.
     """
     cur.execute("""
         SELECT tasks_total, tasks_pending, tasks_running, tasks_done, tasks_failed,
-               rows_written, raycasts_done, raycasts_planned, avg_task_seconds
+               rows_written, raycasts_done, raycasts_planned, avg_task_seconds,
+               pct_affinity_hit, shard_count, section_count
         FROM meo_run_progress WHERE run_id = %s
     """, (run_id,))
     row = cur.fetchone()
@@ -83,19 +100,31 @@ def verify_completeness(cur, run_id: str) -> tuple[bool, dict]:
         print(f"  ERROR: run '{run_id}' not found in meo_runs.")
         return False, {}
 
-    total, pending, running, done, failed, rows, rays, rays_planned, avg_s = row
-    stats = dict(total=total, pending=pending, running=running, done=done,
-                 failed=failed, rows=rows or 0, rays=rays or 0,
-                 rays_planned=rays_planned or 0, avg_task_seconds=avg_s)
+    (total, pending, running, done, failed, rows, rays, rays_planned,
+     avg_s, affinity, shard_count, section_count) = row
 
+    # int()/float() are not decoration. SUM() over a bigint column returns NUMERIC,
+    # which psycopg2 hands back as decimal.Decimal, and Decimal refuses to divide by
+    # a float — so an unguarded `rays / elapsed` in the throughput report is a
+    # TypeError that only appears once a run has actually done work.
+    stats = dict(total=total, pending=pending, running=running, done=done, failed=failed,
+                 rows=int(rows or 0), rays=int(rays or 0),
+                 rays_planned=int(rays_planned or 0),
+                 avg_task_seconds=float(avg_s) if avg_s is not None else None,
+                 affinity=float(affinity) if affinity is not None else None,
+                 shard_count=shard_count, section_count=section_count)
+
+    print(f"  topology        : {shard_count} shards, {section_count} sections")
     print(f"  tasks           : {total:,} total")
     print(f"                    {done:,} done | {pending:,} pending | "
           f"{running:,} running | {failed:,} failed")
     print(f"  rows written    : {stats['rows']:,}")
-    print(f"  raycasts        : {stats['rays']:,} "
-          f"(planned {stats['rays_planned']:,})")
+    print(f"  raycasts        : {stats['rays']:,} (planned {stats['rays_planned']:,})")
     if avg_s:
-        print(f"  mean task time  : {avg_s:.1f}s")
+        print(f"  mean task time  : {stats['avg_task_seconds']:.2f}s")
+    if affinity is not None:
+        print(f"  affinity hits   : {stats['affinity']:.1f}%  "
+              f"(working sets loaded {100 - stats['affinity']:.0f}% of the time)")
 
     if total == 0:
         print("  ERROR: run has no tasks. Did plan_tasks.py run?")
@@ -103,20 +132,20 @@ def verify_completeness(cur, run_id: str) -> tuple[bool, dict]:
 
     if pending or running or failed:
         print()
-        print(f"  RUN IS INCOMPLETE — refusing to finalise.")
+        print("  RUN IS INCOMPLETE — refusing to finalise.")
         cur.execute("""
-            SELECT shard_index, sim_date, state, attempts,
-                   left(coalesce(last_error, ''), 90)
+            SELECT shard_index, section_id, window_index, sim_date, state, attempts,
+                   left(coalesce(last_error, ''), 70)
             FROM meo_tasks
             WHERE run_id = %s AND state <> 'done'
-            ORDER BY state, sim_date, shard_index
+            ORDER BY state, shard_index, sim_date, section_id
             LIMIT 20
         """, (run_id,))
         outstanding = cur.fetchall()
         print(f"  outstanding (first {len(outstanding)}):")
-        for shard, d, state, attempts, err in outstanding:
-            print(f"    shard {shard:>3} {d} {state:<8} attempt {attempts}"
-                  + (f"  {err}" if err else ""))
+        for sh, sec, win, d, state, attempts, err in outstanding:
+            print(f"    shard {sh:>3} section {sec:>5} w{win} {d} {state:<8} "
+                  f"attempt {attempts}" + (f"  {err}" if err else ""))
         print()
         if failed:
             print("  'failed' tasks exhausted max_attempts and need investigation.")
@@ -130,161 +159,128 @@ def verify_completeness(cur, run_id: str) -> tuple[bool, dict]:
 
 
 # ---------------------------------------------------------------------------
-# 2. INTEGRITY
+# 2. PER-SHARD WORK — the parallel part
 # ---------------------------------------------------------------------------
-def verify_integrity(cur, run_id: str) -> bool:
+def finalise_shard(shard_index: int, dsn: dict, sql_dir: str,
+                   steps_per_window: int, do_rollup: bool,
+                   do_indexes: bool) -> dict:
     """
-    Data-level checks that completeness alone cannot catch. Each is cheap and each
-    corresponds to a specific way the pipeline could be subtly wrong.
+    Verifies, rolls up, indexes and analyses ONE shard.
+
+    Called concurrently for all ten. Each shard is a separate PostgreSQL instance
+    with its own cores, page cache and WAL, so there is no contention between them —
+    which is precisely why the reduce phase costs one shard's work rather than ten.
+
+    Returns a result dict rather than raising, so one unreachable instance reports
+    itself instead of aborting the other nine.
     """
-    ok = True
-
-    # (a) sunlit_sum must never exceed sample_count. A breach means the
-    #     combiner's accumulator indexing is wrong — the single most dangerous
-    #     class of bug here, because the data would still look plausible.
-    cur.execute("""
-        SELECT count(*) FROM meo_exposure_edges_p
-        WHERE sunlit_sum > sample_count
-    """)
-    bad = cur.fetchone()[0]
-    if bad:
-        print(f"  FAIL  {bad:,} row(s) with sunlit_sum > sample_count "
-              "(combiner accumulator indexing is broken)")
-        ok = False
-    else:
-        print("  OK    sunlit_sum <= sample_count on every row")
-
-    # (b) No negative counts.
-    cur.execute("SELECT count(*) FROM meo_exposure_edges_p WHERE sunlit_sum < 0")
-    bad = cur.fetchone()[0]
-    if bad:
-        print(f"  FAIL  {bad:,} row(s) with negative sunlit_sum")
-        ok = False
-    else:
-        print("  OK    no negative sunlit_sum")
-
-    # (c) Every edge that has samples should have exposure rows. A missing edge
-    #     means a shard silently produced nothing.
-    cur.execute("""
-        SELECT count(*) FROM (
-            SELECT DISTINCT sp.edge_id
-            FROM meo_sample_points sp
-            WHERE NOT EXISTS (
-                SELECT 1 FROM meo_exposure_edges_p e WHERE e.edge_id = sp.edge_id
-            )
-        ) missing
-    """)
-    missing = cur.fetchone()[0]
-    if missing:
-        print(f"  WARN  {missing:,} edge(s) with sample points but no exposure rows")
-        # Warning, not failure: legitimately possible if the run covered a subset
-        # of the graph.
-    else:
-        print("  OK    every sampled edge has exposure rows")
-
-    # (d) Row count matches expectation: sum over tasks of
-    #     edges_in_shard x timesteps. Catches a partially-flushed task.
-    cur.execute("""
-        WITH expect AS (
-            SELECT t.sim_date,
-                   sum(((t.end_minute - t.start_minute) / t.step_minute + 1)
-                       * (SELECT count(*) FROM meo_edge_shards es
-                          WHERE es.shard_count = t.shard_count
-                            AND es.shard_index = t.shard_index)) AS expected
-            FROM meo_tasks t
-            WHERE t.run_id = %s AND t.state = 'done'
-            GROUP BY t.sim_date
-        ),
-        actual AS (
-            SELECT datetime::date AS sim_date, count(*) AS got
-            FROM meo_exposure_edges_p
-            GROUP BY datetime::date
-        )
-        SELECT e.sim_date, e.expected, coalesce(a.got, 0)
-        FROM expect e LEFT JOIN actual a USING (sim_date)
-        WHERE e.expected <> coalesce(a.got, 0)
-        ORDER BY e.sim_date
-        LIMIT 10
-    """, (run_id,))
-    mismatches = cur.fetchall()
-    if mismatches:
-        print(f"  WARN  row-count mismatch on {len(mismatches)} date(s):")
-        for d, expected, got in mismatches:
-            delta = got - expected
-            print(f"          {d}  expected {expected:,}  got {got:,}  ({delta:+,})")
-        print("        (a surplus is normal if an earlier run wrote the same dates)")
-    else:
-        print("  OK    row counts match expected edges x timesteps per date")
-
-    return ok
-
-
-# ---------------------------------------------------------------------------
-# 3. INDEXES / STATS / ROLLUPS
-# ---------------------------------------------------------------------------
-def run_sql_file(cur, path: str) -> None:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"SQL file not found: {path}")
-    sql = open(path, encoding="utf-8").read()
-    # psql meta-commands are not valid over a normal connection.
-    lines = [l for l in sql.splitlines()
-             if not l.strip().startswith("\\")]
-    cur.execute("\n".join(lines))
-
-
-def build_indexes(cur, sql_dir: str) -> None:
-    """
-    Delegates to 04_post_load_indexes.sql so the DDL lives in exactly one place —
-    runnable by hand via psql, or here.
-
-    Session-scoped memory bump: the index build is one large sort, and
-    maintenance_work_mem is the single biggest lever on how long it takes.
-    """
-    cur.execute("SET maintenance_work_mem = '8GB'")
-    cur.execute("SET max_parallel_maintenance_workers = 8")
-
-    path = os.path.join(sql_dir, "04_post_load_indexes.sql")
-    print(f"  running {path} …")
+    out = {"shard": shard_index, "ok": False, "error": None,
+           "leaf_problems": [], "violations": [], "rollup_rows": 0,
+           "seconds": 0.0, "samples_size": "?", "edges_size": "?", "edge_rows": 0}
     t0 = time.time()
-    run_sql_file(cur, path)
-    print(f"  done in {timedelta(seconds=int(time.time() - t0))}")
+
+    try:
+        conn = psycopg2.connect(**dsn)
+    except psycopg2.Error as e:
+        out["error"] = f"unreachable: {str(e).splitlines()[0]}"
+        return out
+
+    try:
+        conn.autocommit = True
+        cur = conn.cursor()
+
+        # Guard: refuse to operate on the wrong instance. "Ran 05 against shard 3
+        # twice and shard 7 never" is otherwise a silent, expensive mistake.
+        cur.execute("SELECT shard_index FROM meo_shard_identity")
+        actual = cur.fetchone()
+        if not actual or actual[0] != shard_index:
+            out["error"] = (f"identity mismatch: expected shard {shard_index}, "
+                            f"instance says {actual[0] if actual else 'unset'}")
+            return out
+
+        # ---- Leaf inventory: exact row counts against expectation -----------
+        # Catches a task that completed but wrote partial output, which the queue
+        # cannot detect on its own.
+        cur.execute("SELECT * FROM meo_verify_leaf_sizes(%s)", (steps_per_window,))
+        out["leaf_problems"] = cur.fetchall()
+
+        # ---- Rollup ---------------------------------------------------------
+        if do_rollup:
+            cur.execute("SET work_mem = '512MB'")
+            cur.execute("SELECT coalesce(sum(rows_written), 0) FROM meo_rollup_all_edges()")
+            out["rollup_rows"] = cur.fetchone()[0]
+
+        # ---- Indexes, statistics --------------------------------------------
+        if do_indexes:
+            path = os.path.join(sql_dir, "05_post_load_indexes.sql")
+            if not os.path.exists(path):
+                out["error"] = f"SQL file not found: {path}"
+                return out
+            sql = open(path, encoding="utf-8").read()
+            # psql meta-commands (\echo, \set, SET at file scope is fine) are not
+            # valid over a normal connection.
+            sql = "\n".join(l for l in sql.splitlines() if not l.strip().startswith("\\"))
+            cur.execute(sql)
+
+        # ---- Integrity ------------------------------------------------------
+        cur.execute("SELECT check_name, violations FROM meo_integrity_edges")
+        out["violations"] = [(n, v) for n, v in cur.fetchall() if v]
+
+        cur.execute("SELECT samples_size, edges_size, edge_rows FROM meo_shard_summary")
+        s = cur.fetchone()
+        if s:
+            out["samples_size"], out["edges_size"], out["edge_rows"] = s
+
+        out["ok"] = out["error"] is None
+        return out
+
+    except psycopg2.Error as e:
+        out["error"] = str(e).splitlines()[0]
+        return out
+    finally:
+        out["seconds"] = time.time() - t0
+        conn.close()
 
 
-def refresh_rollups(cur) -> None:
-    t0 = time.time()
-    # Not CONCURRENTLY: that requires a pre-existing unique index AND leaves the
-    # old contents queryable, which we do not need since nothing is reading yet.
-    # The plain form is substantially faster.
-    cur.execute("REFRESH MATERIALIZED VIEW meo_edge_daily_exposure")
-    cur.execute("SELECT count(*) FROM meo_edge_daily_exposure")
-    n = cur.fetchone()[0]
-    print(f"  meo_edge_daily_exposure: {n:,} rows "
-          f"({timedelta(seconds=int(time.time() - t0))})")
+# ---------------------------------------------------------------------------
+# 3. FEDERATION
+# ---------------------------------------------------------------------------
+def refresh_federation(cur, password: str) -> None:
+    """
+    Points the coordinator's postgres_fdw servers at the shards and rebuilds the
+    foreign partitions of meo_exposure_edges_fed.
+
+    Analytics only. The routing hot path connects DIRECTLY to the owning shard — see
+    the header of 06_serving_federation.sql for why putting thousands of per-request
+    queries through one instance would be the wrong shape.
+    """
+    # Guard with an actionable message. Without it the failure is
+    # `function meo_setup_federation(unknown) does not exist`, which is accurate and
+    # tells the operator nothing about which of six SQL files they skipped — and it
+    # arrives AFTER the expensive per-shard work has already succeeded.
+    cur.execute("SELECT count(*) FROM pg_proc WHERE proname = 'meo_setup_federation'")
+    if cur.fetchone()[0] == 0:
+        raise RuntimeError(
+            "the coordinator has no federation functions — 06_serving_federation.sql "
+            "has not been applied. Run it, or pass --no-federation to finalise the "
+            "shards without building the analytics view (the routing path does not "
+            "depend on it).")
+
+    cur.execute("SELECT meo_setup_federation(%s)", (password,))
+    created = cur.fetchone()[0]
+    cur.execute("SELECT meo_refresh_federation()")
+    parts = cur.fetchone()[0]
+    print(f"  foreign servers : {created} created, {parts} partition(s) attached")
+
+    cur.execute("SELECT shards_touched, routes, pct FROM meo_route_locality(200, 12)")
+    rows = cur.fetchall()
+    if rows:
+        print("  route locality  : shards touched by a sampled 12-edge route")
+        for touched, routes, pct in rows:
+            print(f"                    {touched} shard(s): {routes:>4} routes ({pct}%)")
 
 
-def report_sizes(cur) -> None:
-    cur.execute("""
-        SELECT c.relname,
-               pg_size_pretty(pg_total_relation_size(c.oid)),
-               pg_total_relation_size(c.oid),
-               COALESCE(s.n_live_tup, 0)
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
-        WHERE n.nspname = 'public'
-          AND c.relkind IN ('r', 'p', 'm')
-          AND c.relname LIKE 'meo_%'
-          AND c.relname NOT LIKE 'meo_stage_%'
-        ORDER BY pg_total_relation_size(c.oid) DESC
-        LIMIT 14
-    """)
-    print(f"  {'relation':<38} {'size':>10}  {'rows':>14}")
-    print(f"  {'-'*38} {'-'*10}  {'-'*14}")
-    for name, pretty, _raw, rows in cur.fetchall():
-        print(f"  {name:<38} {pretty:>10}  {rows:>14,}")
-
-
-def report_throughput(cur, run_id: str, stats: dict) -> None:
+def report_throughput(cur, run_id: str, stats: dict, reduce_seconds: float) -> None:
     cur.execute("""
         SELECT min(started_at), max(finished_at),
                EXTRACT(EPOCH FROM (max(finished_at) - min(started_at))),
@@ -296,14 +292,23 @@ def report_throughput(cur, run_id: str, stats: dict) -> None:
         return
 
     rays = stats.get("rays", 0) or 0
-    print(f"  wall clock      : {timedelta(seconds=int(wall))}  ({t0:%H:%M:%S} -> {t1:%H:%M:%S})")
+    total = float(wall) + reduce_seconds
+
+    print(f"  map wall clock  : {timedelta(seconds=int(wall))}  "
+          f"({t0:%H:%M:%S} -> {t1:%H:%M:%S})")
+    print(f"  reduce          : {timedelta(seconds=int(reduce_seconds))}  "
+          f"({stats['shard_count']} shards in parallel)")
+    print(f"  total           : {timedelta(seconds=int(total))}")
     print(f"  distinct workers: {workers}")
+
     if rays:
-        print(f"  throughput      : {human(rays / wall)} raycasts/s "
-              f"({human(rays / wall * 3600)}/hour)")
-        # Single-node reference: 1.577e9 raycasts in 6 h = ~73k/s.
-        speedup = (rays / wall) / 73000.0
-        print(f"  vs single node  : {speedup:.1f}x  (baseline 73k raycasts/s)")
+        rate = rays / float(wall)
+        print(f"  throughput      : {human(rate)} raycasts/s "
+              f"({human(rate * 3600)}/hour)")
+        print(f"  per worker      : {human(rate / max(1, workers))}/s  "
+              f"(v1 single-thread baseline {human(model.V1_RAYCAST_RATE)}/s)")
+        print(f"  vs v1 end-to-end: {model.V1_SECONDS / total:.1f}x  "
+              f"(model predicts {model.V1_SECONDS / model.total_seconds():.1f}x)")
 
 
 # ---------------------------------------------------------------------------
@@ -311,30 +316,31 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--run-id", required=True)
-    p.add_argument("--verify", action="store_true", help="completeness + integrity checks")
     p.add_argument("--verify-only", action="store_true", help="check and exit; change nothing")
-    p.add_argument("--build-indexes", action="store_true")
-    p.add_argument("--refresh-rollups", action="store_true")
+    p.add_argument("--no-rollup", action="store_true", help="skip deriving meo_exposure_edges")
+    p.add_argument("--no-indexes", action="store_true", help="skip index + ANALYZE")
+    p.add_argument("--no-federation", action="store_true", help="skip the postgres_fdw setup")
+    p.add_argument("--shards", default=None,
+                   help="comma-separated subset to finalise (default: all registered)")
+    p.add_argument("--jobs", type=int, default=0,
+                   help="concurrent shards (default: all of them — they are separate hosts)")
     p.add_argument("--force", action="store_true",
                    help="finalise even if the run is incomplete (NOT recommended)")
     p.add_argument("--sql-dir",
-                   default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "db"))
-    p.add_argument("--db-host"); p.add_argument("--db-port")
-    p.add_argument("--db-name"); p.add_argument("--db-user"); p.add_argument("--db-password")
+                   default=os.environ.get("SUNLIT_SQL_DIR") or
+                           os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "db"))
+    p.add_argument("--coord-host"); p.add_argument("--coord-port")
+    p.add_argument("--coord-db"); p.add_argument("--db-user"); p.add_argument("--db-password")
     args = p.parse_args()
 
-    # Default to doing everything when no phase flag is given.
-    if not any([args.verify, args.verify_only, args.build_indexes, args.refresh_rollups]):
-        args.verify = args.build_indexes = args.refresh_rollups = True
-
+    sql_dir = os.path.normpath(args.sql_dir)
     conn = None
     try:
-        conn = psycopg2.connect(**db_config(args))
-        conn.autocommit = True   # DDL + REFRESH manage their own transactions
+        conn = psycopg2.connect(**coord_config(args))
+        conn.autocommit = True
         cur = conn.cursor()
 
         hr(f"REDUCE — run '{args.run_id}'")
-
         complete, stats = verify_completeness(cur, args.run_id)
 
         if not complete:
@@ -343,45 +349,141 @@ def main() -> int:
                 return EXIT_INCOMPLETE
             print("\n  --force given: continuing despite an incomplete run.")
 
-        if args.verify or args.verify_only:
-            hr("INTEGRITY")
-            if not verify_integrity(cur, args.run_id):
-                print("\n  Integrity checks FAILED — not finalising.")
-                return EXIT_INTEGRITY
+        # Window geometry, read from the run rather than assumed, so a run planned
+        # with different windows still verifies against the right expectation.
+        cur.execute("SELECT config FROM meo_runs WHERE run_id = %s", (args.run_id,))
+        cfg = cur.fetchone()[0] or {}
+        span = int(cfg.get("end_minute", model.END_MINUTE)) - \
+               int(cfg.get("start_minute", model.START_MINUTE))
+        windows = int(cfg.get("windows", model.TIME_WINDOWS))
+        step = int(cfg.get("step_minute", model.STEP_MINUTE))
+        steps_per_window = (span // windows) // step
+
+        # ---- Which shards ---------------------------------------------------
+        if args.shards:
+            wanted = [int(x) for x in args.shards.split(",")]
+        else:
+            cur.execute("SELECT shard_index FROM meo_shards ORDER BY shard_index")
+            wanted = [r[0] for r in cur.fetchall()]
+
+        if not wanted:
+            print("\n  ERROR: no shards registered. Did plan_tasks.py run?")
+            return EXIT_ERROR
+
+        endpoints = ClusterEndpoints.from_environment()
+        password = coord_config(args)["password"]
+        dsns = {}
+        for i in wanted:
+            d = endpoints.shard(i)
+            dsns[i] = dict(host=d["host"], port=d["port"], dbname=d["dbname"],
+                           user=d["user"], password=password)
+
+        if args.verify_only:
+            hr("VERIFY ONLY — no changes")
+            do_rollup = do_indexes = False
+        else:
+            do_rollup = not args.no_rollup
+            do_indexes = not args.no_indexes
+            hr(f"PER-SHARD REDUCE — {len(wanted)} shard(s) in parallel")
+            print(f"  expecting {steps_per_window} timesteps per (section, window) leaf")
+
+        # All shards at once by default. They are separate hosts, so the only thing
+        # this consumes locally is one thread and one socket each — and doing them
+        # serially would multiply the reduce phase by the shard count, which is the
+        # whole cost the cluster exists to divide.
+        jobs = args.jobs or len(wanted)
+        t0 = time.time()
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {
+                pool.submit(finalise_shard, i, dsns[i], sql_dir,
+                            steps_per_window, do_rollup, do_indexes): i
+                for i in wanted
+            }
+            for fut in concurrent.futures.as_completed(futures):
+                r = fut.result()
+                results.append(r)
+                if r["ok"]:
+                    print(f"  shard {r['shard']:>2} : OK   {r['seconds']:>6.1f}s  "
+                          f"rollup {r['rollup_rows']:>10,} rows  "
+                          f"samples {r['samples_size']:>10}  edges {r['edges_size']:>9}")
+                else:
+                    print(f"  shard {r['shard']:>2} : FAIL {r['seconds']:>6.1f}s  {r['error']}")
+        reduce_seconds = time.time() - t0
+        results.sort(key=lambda r: r["shard"])
+
+        # ---- Integrity ------------------------------------------------------
+        hr("INTEGRITY")
+        bad = False
+        for r in results:
+            if r["error"]:
+                print(f"  shard {r['shard']:>2}  UNREACHABLE / MISMATCH — {r['error']}")
+                bad = True
+                continue
+            if r["leaf_problems"]:
+                print(f"  shard {r['shard']:>2}  FAIL  {len(r['leaf_problems'])} leaf/leaves "
+                      "with the wrong row count (a task wrote partial output):")
+                for leaf, sec, actual, expect, delta in r["leaf_problems"][:5]:
+                    print(f"            {leaf}  got {actual:,} expected {expect:,} ({delta:+,})")
+                bad = True
+            if r["violations"]:
+                for name, n in r["violations"]:
+                    # An owned edge with no exposure rows is a warning, not a failure:
+                    # it is legitimate when a run deliberately covered a subset.
+                    severe = "no exposure rows" not in name
+                    print(f"  shard {r['shard']:>2}  {'FAIL' if severe else 'WARN'}  "
+                          f"{name}: {n:,}")
+                    bad = bad or severe
+            if not r["leaf_problems"] and not r["violations"]:
+                print(f"  shard {r['shard']:>2}  OK    leaves correctly sized, "
+                      f"no integrity violations")
+
+        if bad:
+            print("\n  Integrity checks FAILED — not finalising.")
+            return EXIT_INTEGRITY
 
         if args.verify_only:
             hr("VERIFY-ONLY — no changes made")
             return EXIT_OK
 
-        if args.build_indexes:
-            hr("INDEXES + STATISTICS")
-            build_indexes(cur, os.path.normpath(args.sql_dir))
+        # ---- Federation -----------------------------------------------------
+        if not args.no_federation:
+            hr("SERVING FEDERATION")
+            refresh_federation(cur, password)
 
-        if args.refresh_rollups:
-            hr("ROLLUPS")
-            refresh_rollups(cur)
-
+        # ---- Report ---------------------------------------------------------
         hr("STORAGE")
-        report_sizes(cur)
+        total_edge_rows = sum(r["edge_rows"] for r in results)
+        print(f"  {'shard':>6} {'samples':>12} {'edge index':>12} {'edge rows':>12}")
+        print("  " + "-" * 46)
+        for r in results:
+            print(f"  {r['shard']:>6} {r['samples_size']:>12} {r['edges_size']:>12} "
+                  f"{r['edge_rows']:>12,}")
+        print(f"  {'total':>6} {'':>12} {'':>12} {total_edge_rows:>12,}")
 
         hr("THROUGHPUT")
-        report_throughput(cur, args.run_id, stats)
+        report_throughput(cur, args.run_id, stats, reduce_seconds)
 
         cur.execute("UPDATE meo_runs SET finished_at = now() WHERE run_id = %s",
                     (args.run_id,))
 
         hr("DONE")
         print("  Dataset finalised.")
-        print("  Switch PostgreSQL to the serving profile before exposing it:")
-        print("    include 'postgresql.serving.conf'  &&  pg_ctl restart")
-        print("  Then take a base backup — the bulk profile could not produce one.")
+        print("  Switch every shard to the serving profile before exposing it:")
+        print("    include 'postgresql.shard.serving.conf'  &&  pg_ctl restart")
+        print("  Then take base backups — the bulk profile could not produce one.")
+        print()
+        print("  The routing contract downstream should use:")
+        print("    coordinator:  SELECT * FROM meo_edge_shard(:edge_id);")
+        print("    that shard:   SELECT * FROM meo_edge_directional_cost(")
+        print("                    :edge_id, :entry_time, :reverse, :walk_speed);")
         print()
         return EXIT_OK
 
     except psycopg2.Error as e:
         print(f"\nERROR: database error: {e}", file=sys.stderr)
         return EXIT_ERROR
-    except FileNotFoundError as e:
+    except (FileNotFoundError, RuntimeError) as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         return EXIT_ERROR
     finally:
