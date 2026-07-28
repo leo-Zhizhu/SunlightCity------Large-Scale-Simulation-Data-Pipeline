@@ -1,0 +1,67 @@
+# Build context hygiene. The Unity project is ~1 GB; without this the docker
+# daemon tars the whole thing (including regenerable caches) and sends it over the
+# socket before the first instruction runs.
+
+# --- Unity regenerable caches (the big ones) ---------------------------------
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+Build/
+Builds/
+build/
+# NOTE: build/ is excluded from the BUILD image context (Dockerfile.build) but is
+# REQUIRED by the runtime image (Dockerfile.worker). Docker uses a single
+# .dockerignore per context root, so when building the worker image, run it from a
+# context where build/ is present and use the root .dockerignore instead of this
+# one — see DEPLOYMENT.md for the exact two-step invocation.
+
+# --- IDE / generated project files -------------------------------------------
+*.csproj
+*.sln
+*.user
+*.userprefs
+.vs/
+.vscode/
+.idea/
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+
+# --- VCS ----------------------------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+
+# --- Large artifacts that must never enter a build context -------------------
+*.zip
+*.7z
+*.tar.gz
+*.unitypackage
+*.sql
+*.sql.gz
+*.dump
+
+# --- Docs / assets not needed to build ---------------------------------------
+docs/
+*.md
+!distributed/**/*.md
+README*
+LICENSE*
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# --- OS -----------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
