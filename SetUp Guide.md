@@ -2,6 +2,17 @@
 
 Welcome to the SunlightCity project! This guide will walk you through setting up the necessary database and opening the Unity project so you can run the simulation locally.
 
+> **This guide covers the v1, single-node pipeline** — one desktop, one PostgreSQL
+> instance, a 6-hour annual run. That is the reference implementation and the right place
+> to start.
+>
+> | If you want to… | Read |
+> |---|---|
+> | understand what v1 does, phase by phase | [`docs/V1_PIPELINE.md`](docs/V1_PIPELINE.md) |
+> | run it across a Kubernetes fleet in ~3 minutes | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) |
+> | know why the distributed version needs 11 databases | [`docs/DB_CLUSTER.md`](docs/DB_CLUSTER.md) |
+> | see the whole picture first | [`README.md`](README.md) |
+
 ## Prerequisites
 Before you begin, ensure you have the following installed:
 1. **Docker Desktop** (or Docker Engine with Docker Compose)

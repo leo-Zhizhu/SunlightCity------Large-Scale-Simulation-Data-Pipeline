@@ -15,11 +15,25 @@ using Npgsql;
 ///   1. Load the road graph (waypoints + edges) for a bounding box around start/end from PostGIS.
 ///   2. Generate 2 m-spaced sample points along every edge and write them to `meo_sample_points`.
 ///   3. Sweep simulated time and raycast each sample point at the sun, streaming boolean
-///      sunlit/shadowed results into `meo_exposure_samples` via COPY, aggregating to
-///      `meo_exposure_edges` server-side every 3 simulated hours.
+///      sunlit/shadowed results into `meo_exposure_samples` via COPY — THE PRODUCT, one row
+///      per (sample point, timestamp) — and deriving the `meo_exposure_edges` convenience
+///      index server-side every 3 simulated hours.
 ///   4. Render the backend's Pareto-optimal routes (read back from `backendOutputCsvPath`).
 ///
 /// Heavy lifting is split across the engines in ShadowAwarePathFinder_Engines.cs.
+///
+/// This is the v1, single-node exporter: 1.577 billion raycasts in 6 hours on one thread,
+/// with peak RAM flat at ~250 MB because the buffer is flushed every 3 simulated hours.
+/// It remains supported and is the right tool for one neighbourhood. The distributed
+/// pipeline in distributed/ writes the same rows into the same schema on 50 workers; see
+/// docs/V1_PIPELINE.md for the full description and what v2 changes.
+///
+/// Two things here that v2 inherits rather than replaces:
+///   * The bounding box. v1 already proved a spatial subset can be simulated
+///     independently; v2 turns that into its unit of both parallelism and storage.
+///   * The horizon guard in ShadowEngine.IsInShadow. Besides being a correctness fix, it
+///     bounds the longest possible shadow at H/tan(threshold) — which is what makes v2's
+///     per-section tasks exactly, rather than approximately, independent.
 /// </summary>
 public class ShadowAwarePathFinder : MonoBehaviour
 {
@@ -806,10 +820,16 @@ public class ShadowAwarePathFinder : MonoBehaviour
                             }
                         }
 
-                        // B. Collapse the block's raw booleans into per-edge sums *inside* the
-                        //    database. The NOT EXISTS clause makes this idempotent, so re-running
-                        //    an interrupted export never double-counts. This is what shrinks the
-                        //    working set from ~110 GB of samples to ~2 GB of edge costs.
+                        // B. Derive per-edge sums *inside* the database. The NOT EXISTS clause
+                        //    makes this idempotent, so re-running an interrupted export never
+                        //    double-counts.
+                        //
+                        //    Note this DERIVES a convenience index; it does not replace the
+                        //    samples. sunlit_sum answers "how sunlit is this edge right now" in
+                        //    ~2 GB instead of ~110 GB, which is what makes the Pareto search's
+                        //    coarse objective an O(1) lookup. It cannot answer the directional
+                        //    question — walked from WHICH end, entering WHEN — because summing
+                        //    threw away the order. The samples above remain the product.
                         using (var cmd = new NpgsqlCommand(@"
                             INSERT INTO meo_exposure_edges (edge_id, datetime, sunlit_sum)
                             SELECT sp.edge_id, es.datetime, SUM(CAST(es.is_sunlit AS INT))
