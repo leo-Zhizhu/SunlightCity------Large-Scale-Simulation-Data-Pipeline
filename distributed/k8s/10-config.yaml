@@ -1,0 +1,109 @@
+# =============================================================================
+# Worker configuration.
+#
+# Split into a ConfigMap (non-secret, reviewable in git, diffable across
+# environments) and a Secret (credentials, never committed with real values).
+#
+# Every key here maps 1:1 onto a field in WorkerConfig.cs. Keeping the names
+# identical means a config question can be answered by grepping one string across
+# both the manifest and the source.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sunlit-worker-config
+  namespace: sunlightcity
+data:
+  # ---- Database endpoint ----------------------------------------------------
+  # Points at PgBouncer, not Postgres directly. See 20-pgbouncer.yaml for why
+  # that matters at 50 workers.
+  SUNLIT_DB_HOST: "pgbouncer"
+  SUNLIT_DB_PORT: "6432"
+  SUNLIT_DB_NAME: "city_data"
+  SUNLIT_DB_USER: "admin"
+
+  # ---- Lease / heartbeat ---------------------------------------------------
+  # Lease must exceed the worst-case single-task duration, or a healthy worker
+  # loses its lease mid-task and the work is done twice. A June shard-day is the
+  # long pole; 900 s carries generous headroom over the ~200 s expected.
+  SUNLIT_LEASE_SECONDS: "900"
+  # Renewed 30x per lease window, so ~29 consecutive heartbeat failures are
+  # needed before a live worker is declared dead.
+  SUNLIT_HEARTBEAT_SECONDS: "30"
+
+  # ---- Drain behaviour -----------------------------------------------------
+  # 6 empty polls x 10 s = ~60 s of confirmed-empty queue before a pod exits.
+  # Long enough that a worker does not quit while peers still hold tasks that
+  # might fail back to pending and need collecting.
+  SUNLIT_EMPTY_POLL_SECONDS: "10"
+  SUNLIT_MAX_EMPTY_POLLS: "6"
+
+  # ---- Simulation ----------------------------------------------------------
+  # MUST match db_pipeline_initializer.py's GLOBAL_ELEVATION and the value pinned
+  # in meo_runs.config. The worker refuses to start on a mismatch.
+  SUNLIT_GLOBAL_ELEVATION: "-112.0"
+  SUNLIT_SUN_ANGLE_THRESHOLD: "5.0"
+  SUNLIT_CITY: "Manhattan"
+  SUNLIT_SOLAR_YEAR: "2026"
+
+  # ---- The big one ---------------------------------------------------------
+  # false  -> combiner only. Writes ~2 GB of edge aggregates. THE DEFAULT.
+  # true   -> also persists ~110 GB of per-sample booleans.
+  # Flipping this to true increases write volume ~53x and is the single fastest
+  # way to turn a 12-minute run into a multi-hour one. Only enable when an
+  # analysis genuinely needs sub-edge resolution.
+  SUNLIT_EMIT_RAW: "false"
+
+  # Rows buffered before a COPY flush. 250k CSV rows is roughly 15 MB in flight —
+  # large enough to amortise the round trip, small enough that 50 workers doing it
+  # simultaneously do not spike the database's receive buffers.
+  SUNLIT_COPY_BATCH_ROWS: "250000"
+
+  # ---- Layer masks (raw ints; no Inspector in a headless build) -------------
+  # Recompute for your scene: mask = sum(1 << layerIndex) for every shadow-casting
+  # layer. 0xFFFFFFFF (all layers) is a safe default but slower — the raycast
+  # cannot skip whole BVH subtrees. Narrow it to buildings+ground for real runs.
+  SUNLIT_SHADOW_CASTER_MASK: "-1"
+  SUNLIT_GROUND_BLOCKER_MASK: "0"
+
+  # ---- Safety --------------------------------------------------------------
+  # Abort a task exceeding this so one pathological shard cannot hold a worker
+  # slot indefinitely. Comfortably above the ~200 s expected worst case.
+  SUNLIT_TASK_TIMEOUT_SECONDS: "1800"
+  SUNLIT_DB_WAIT_SECONDS: "300"
+  SUNLIT_VERBOSE: "false"
+
+  # ---- Unity runtime -------------------------------------------------------
+  # IL2CPP/.NET honours these. Server GC is throughput-oriented (per-core heaps)
+  # rather than latency-oriented, which is exactly right for a batch worker.
+  DOTNET_gcServer: "1"
+  # Concurrent GC off: background collection steals CPU from the raycast loop and
+  # we have no latency requirement to protect.
+  DOTNET_gcConcurrent: "0"
+---
+# =============================================================================
+# EXAMPLE Secret. Do NOT apply as-is.
+#
+# Committed with placeholders so the manifest set is complete and self-describing.
+# In production, supply it from outside git — sealed-secrets, External Secrets
+# Operator, Vault Agent injector, or a one-off `kubectl create secret`:
+#
+#   kubectl -n sunlightcity create secret generic sunlit-db-credentials \
+#       --from-literal=SUNLIT_DB_PASSWORD='...' \
+#       --from-literal=PGBOUNCER_AUTH_PASSWORD='...'
+#
+# stringData (not data) so the values are human-readable here; Kubernetes
+# base64-encodes them on write. Note that base64 is encoding, NOT encryption —
+# a Secret is only as protected as the cluster's RBAC and etcd encryption.
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sunlit-db-credentials
+  namespace: sunlightcity
+  annotations:
+    sunlightcity.io/warning: "PLACEHOLDER VALUES — replace before applying"
+type: Opaque
+stringData:
+  SUNLIT_DB_PASSWORD: "CHANGE_ME"
+  PGBOUNCER_AUTH_PASSWORD: "CHANGE_ME"

@@ -94,7 +94,33 @@ namespace SunlightCity.Distributed
 
             _combiner = new ShardExposureCombiner(_cfg);
 
+            // Readiness marker for the Job's startupProbe. Written only after the
+            // scene, solar data and queue connection are all verified, so the probe
+            // distinguishes "still booting the engine and building the BVH" (which
+            // legitimately takes minutes on a cold page cache) from "hung".
+            TouchReadyMarker();
+
             StartCoroutine(WorkerLoop());
+        }
+
+        private const string ReadyMarkerPath = "/tmp/sunlit-ready";
+
+        private void TouchReadyMarker()
+        {
+            try
+            {
+                System.IO.File.WriteAllText(
+                    ReadyMarkerPath,
+                    $"{_cfg.WorkerId}\t{_cfg.RunId}\t{DateTime.UtcNow:O}\n");
+                Debug.Log($"[Worker] readiness marker written to {ReadyMarkerPath}");
+            }
+            catch (Exception e)
+            {
+                // Non-fatal: the marker is an observability aid, not a correctness
+                // requirement. Losing it only means the startupProbe never passes,
+                // which the operator will see as a pod stuck in Running-not-Ready.
+                Debug.LogWarning($"[Worker] could not write readiness marker: {e.Message}");
+            }
         }
 
         /// <summary>

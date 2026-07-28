@@ -1,0 +1,45 @@
+# =============================================================================
+# Kustomize base for the SunlightCity distributed pipeline.
+#
+#   kubectl apply -k distributed/k8s/                      # apply everything
+#   kubectl kustomize distributed/k8s/                     # render, no apply
+#
+# Deliberately NO Helm. The variability here is small and structural (image tag,
+# run id, fleet size) rather than the deep conditional templating Helm exists for.
+# Kustomize keeps the manifests valid YAML that can be read, linted, and diffed
+# directly — a Go-template soup cannot be.
+#
+# See overlays/ for per-environment variants.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: sunlightcity
+
+resources:
+  - 00-namespace.yaml
+  - 10-config.yaml
+  - 20-pgbouncer.yaml
+  - 30-job-map.yaml
+  - 40-job-reduce.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: sunlightcity
+  app.kubernetes.io/managed-by: kustomize
+
+images:
+  - name: sunlightcity/worker
+    newTag: v1
+  - name: sunlightcity/orchestrator
+    newTag: v1
+
+# Jobs are immutable in their pod template once created, so a re-apply of a
+# changed Job fails rather than updating. Suffixing the name with a content hash
+# makes each configuration a NEW Job, which is the correct semantic for a batch
+# run: you want run N and run N+1 to be separate objects, not a mutation.
+#
+# Trade-off: old Jobs accumulate. ttlSecondsAfterFinished on each Job handles
+# cleanup, so this is safe.
+#
+# Uncomment when driving runs from CI:
+# nameSuffix: -v1
