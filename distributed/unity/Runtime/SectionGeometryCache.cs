@@ -46,7 +46,7 @@ namespace SunlightCity.Distributed
     /// A section's geometry is identical for all twelve of its dates and all six of
     /// its windows — 72 tasks share one load. The coordinator's claim function
     /// dispatches with AFFINITY on (section, window) precisely so a worker keeps
-    /// receiving tasks it already has the geometry for, which turns 6,048 loads
+    /// receiving tasks it already has the geometry for, which turns 30,240 loads
     /// into 504 across the fleet.
     ///
     /// One entry, not an LRU, because affinity makes the access pattern strictly

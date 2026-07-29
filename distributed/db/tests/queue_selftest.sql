@@ -17,7 +17,7 @@
 --      this backwards would leave the long pole to be picked up last, with the
 --      makespan set by one task while the rest of the fleet idles.
 --   2. AFFINITY. A worker asking for more of its current (section, window) gets it,
---      in preference to LPT. This is what turns 6,048 collider/geometry working-set
+--      in preference to LPT. This is what turns 30,240 collider/geometry working-set
 --      loads into 504.
 --   3. AFFINITY CANNOT STALL THE QUEUE. When the hinted group is exhausted the
 --      claim falls through to LPT rather than returning nothing. Without this, a

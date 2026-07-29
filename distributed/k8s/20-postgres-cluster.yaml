@@ -3,15 +3,16 @@
 #
 # This file is the answer to the question the whole v2 rewrite exists for:
 #
-#   The schema keeps one row per (sample point, timestamp) — 1,577,374,560 of them
-#   — because the router traverses an edge as an ORDERED, DIRECTIONAL sequence and a
+#   The schema keeps one row per (sample point, timestamp) — 7,886,872,800 of them
+#   at v2's 60 dates — because the router traverses an edge as an ORDERED,
+#   DIRECTIONAL sequence and a
 #   per-edge sum cannot express which end you entered from. One PostgreSQL instance
 #   cannot absorb that from 50 concurrent producers: a COPY backend is one busy CPU,
 #   so a 16 vCPU instance sustains ~12 productive streams (~2.4M rows/s) against a
 #   fleet producing 14.8M rows/s. Six sevenths of the fleet would sit waiting.
 #
 #   So there are ten of them. `python model.py --sweep` shows what that is worth:
-#   50 workers on ONE instance finish in 15m 12s; on ten, 3m 20s.
+#   50 workers on ONE instance finish in 1.18 h; on ten, 11m 38s.
 #
 #
 # WHY TWO KINDS OF INSTANCE AND NOT ELEVEN OF ONE
@@ -21,7 +22,7 @@
 #
 #   meo_tasks is a few thousand rows taking ~250,000 UPDATEs over a run (one claim,
 #   ~40 heartbeats and one completion per task), every one of them on a worker's
-#   critical path. The exposure leaves are 100 GB of append-only bulk. Co-locate
+#   critical path. The exposure leaves are 500 GB of append-only bulk. Co-locate
 #   them and every claim queues behind a checkpoint flushing a bulk load's dirty
 #   buffers — so claim latency degrades exactly when the fleet is busiest, which is
 #   the hardest failure mode to diagnose from outside.
@@ -32,7 +33,7 @@
 # A NOTE ON WHAT THIS FILE IS NOT
 # -------------------------------
 # These are plain StatefulSets running the upstream postgis image. That is the right
-# choice for a batch pipeline whose data is reproducible in three minutes: there is
+# choice for a batch pipeline whose data is reproducible in twelve minutes: there is
 # no failover to orchestrate, no follower to promote, and a shard that dies is
 # replaced and re-run. A production OLTP deployment would want an operator
 # (CloudNativePG, Zalando, Crunchy) for automated failover, backup scheduling and
@@ -67,7 +68,7 @@ data:
     huge_pages = try
 
     # THE line. COPY into a relation created in the same transaction skips WAL
-    # entirely, and every task builds its own partition leaf — so the whole ~100 GB
+    # entirely, and every task builds its own partition leaf — so the whole ~500 GB
     # of sample data is written without a single WAL record.
     wal_level = minimal
     max_wal_senders = 0
@@ -347,7 +348,7 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        # Local NVMe. A shard holds ~10 GB of samples plus indexes and WAL; 256Gi is
+        # Local NVMe. A shard holds ~50 GB of samples plus indexes and WAL; 256Gi is
         # generous headroom for a second run's partitions living alongside the first.
         resources:
           requests:

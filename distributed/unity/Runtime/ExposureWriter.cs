@@ -70,8 +70,8 @@ namespace SunlightCity.Distributed
     ///
     /// Binary COPY writes the UUID as its 16 raw bytes, the timestamp as an int64
     /// of microseconds, the boolean as one byte — ~30 bytes on the wire, no client
-    /// allocation, and no server-side parse at all. At 1.58 billion rows that is
-    /// ~34 GB less network traffic and ~1.58 billion strings never created.
+    /// allocation, and no server-side parse at all. At 7.89 billion rows that is
+    /// ~170 GB less network traffic and ~7.89 billion strings never created.
     ///
     ///
     /// 2. THE FLUSH RUNS ON A BACKGROUND THREAD
@@ -302,10 +302,10 @@ namespace SunlightCity.Distributed
         ///
         /// One transaction is not a style choice. PostgreSQL skips WAL for a COPY
         /// only when the target relation was created in the SAME transaction, so
-        /// splitting this would silently reintroduce ~100 GB of WAL across the
+        /// splitting this would silently reintroduce ~500 GB of WAL across the
         /// cluster. FREEZE has the same requirement, and it is why the tuples land
         /// already visible to everyone — no hint-bit write on first read, no
-        /// freeze-vacuum of 1.58 billion rows ever.
+        /// freeze-vacuum of 7.89 billion rows ever.
         /// </summary>
         private long WritePayload(WindowPayload p)
         {

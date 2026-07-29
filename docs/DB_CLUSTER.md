@@ -19,14 +19,29 @@ precisely so that this page cannot drift from it.
 
 ```
 sample points                365,133
-timesteps per day                360      03:00-21:00, 3-minute steps, half-open
-days                              12      one representative day per month
+timesteps per day                360      03:00-21:00 every 3 min, half-open
+dates                             60      five per month, ~every 6 days
                           ────────────
-rows                   1,577,374,560
+ROWS                   7,886,872,800      the full cross product
 
-per-worker raycast rate      295,758/s    73,027 x 3.0 batching x 1.35 locality
+per-worker row rate          295,758/s    73,027 x 3.0 batching x 1.35 locality
 fleet of 50               14,787,900/s    ← what the database must absorb
 ```
+
+Two figures that are easy to conflate, and only one of them sizes the database:
+
+| | | |
+|---|---:|---|
+| **rows** | **7,886,872,800** | every (sample point, timestep). What is stored. |
+| raycasts | 4,952,298,879 | 63% — only the timesteps above the horizon guard |
+
+Below 5° of sun elevation the worker records "shadowed" without touching the BVH, but
+it still emits the row, because downstream needs a value at every timestep rather than
+a gap. So **compute** scales with daylight (168 live timesteps per day in December,
+285 in June) while **storage and ingest** scale with the full cross product. The
+database is sized from the row figure.
+
+v1's 12 dates were 1,577,374,560 rows and 990,240,696 raycasts — the same 63%.
 
 ### Supply, per instance
 
@@ -53,7 +68,7 @@ deployed                             10        +35% headroom
 **Why headroom rather than the minimum.** At exactly the balance point, any hiccup on
 any instance — a checkpoint, an autovacuum, a slow disk — propagates straight into
 fleet stall time, because there is nowhere for the work to go. Ten instances means the
-write side finishes in 1m 19s against the raycast side's 1m 47s, so the fleet is
+write side finishes in 6m 34s against the raycast side's 8m 53s, so the fleet is
 compute-bound with 26% of the writer's time idle. That idle time is the buffer.
 
 **Why not twenty.** Nine seconds, for double the database spend. And past ~25 it gets
@@ -93,11 +108,39 @@ instances busy, so each one starves.
    │ 128 GB       │              │   ~8 sections each, Hilbert-contiguous   │
    │ 256 GB NVMe  │              │                                          │
    │              │              │                                          │
-   │ ~10 GB samples in 576 leaves                                           │
+   │ ~50 GB samples in 3,024 leaves                                           │
    │ ~0.2 GB derived edge index                                             │
    │ full static geometry replica (~140 MB)                                 │
    └──────────────┴──────────────┴─────────────────────────────────────────┘
 ```
+
+### What one row is, precisely
+
+The reason 7.89 billion *observations* and 7.89 billion *rows* are the same number is
+that the table is **fully normalised** — long and narrow, not wide:
+
+```sql
+meo_exposure_samples (sample_point_id UUID, datetime TIMESTAMP, is_sunlit BOOLEAN)
+--                    ('a1b2…',            '2026-06-15 15:00:00', true)
+```
+
+One row is one (sample point, timestep) observation carrying **one bit**. No array, no
+column per timestep, nothing packed. That identity is a property of the encoding, not
+an inevitability — and the encoding is expensive:
+
+| | rows | storage | |
+|---|---:|---:|---|
+| **long form** (deployed) | 7,886,872,800 | **499 GB** | 68 B per page row to carry 1 bit — **0.18%** payload |
+| packed: one row per (sample point, date) with a 360-bit bitmap | 21,907,980 | ~2 GB | **245× smaller**; would fit one instance |
+
+The packed form is not used because **the v1 column set is a hard requirement** and
+every v1 consumer selects those three columns by name. That is a real cost knowingly
+accepted rather than an oversight, and it is worth being blunt that it is what makes an
+eleven-instance cluster necessary at all.
+
+The compatibility views are what would make a change of mind possible later: they
+promise three columns while the storage underneath is free to change shape. Nothing
+downstream would need to know.
 
 ### Why the coordinator is separate
 
@@ -105,7 +148,7 @@ It holds ~200 MB and could physically live on any shard. Keeping it apart is the
 
 > `meo_tasks` is a few thousand rows taking ~250,000 `UPDATE`s over a run — one claim,
 > ~40 heartbeats and one completion per task — and **every one of them is on a worker's
-> critical path**. The exposure leaves are 100 GB of append-only bulk.
+> critical path**. The exposure leaves are 500 GB of append-only bulk.
 >
 > Co-locate them and every claim queues behind a checkpoint flushing a bulk load's
 > dirty buffers. Claim latency degrades exactly when the fleet is busiest, which is the
@@ -121,11 +164,11 @@ it away — see [TUNING.md](TUNING.md#the-safety-argument-stated-plainly).
 
 ### Why 128 GB per shard
 
-A shard holds ~10 GB of samples. 128 GB means the instance's entire slice of the dataset
-sits in its page cache, so the reduce phase's aggregate over 158 million rows never
+A shard holds ~50 GB of samples. 128 GB means the instance's entire slice of the dataset
+sits in its page cache, so the reduce phase's aggregate over 789 million rows never
 touches disk, and after a warm-up pass routing queries do not either.
 
-That is also why the whole run costs only ~32 vCPU-hours despite 572 vCPU: the hardware
+That is also why the whole run costs only ~111 vCPU-hours despite 572 vCPU: the hardware
 is wide, not held for long.
 
 ### Why no pooler in front of the shards
@@ -180,7 +223,7 @@ speckle, which is the whole point.
 
 `plan_tasks.py` **refuses** a topology whose worst shard exceeds `--max-imbalance`
 (default 1.25×), because the slowest instance sets the makespan and discovering that
-from a graph three minutes into a run is worse than discovering it from an error.
+from a graph twelve minutes into a run is worse than discovering it from an error.
 
 ### When the topology changes
 
@@ -190,7 +233,7 @@ multiple of the section size, so adding a city block does not renumber everythin
 exist, so a re-plan after a small graph change does not move loaded data.
 
 Changing the **shard count** does move data. There is no rebalancing tool, deliberately:
-re-running the whole pipeline takes three minutes, which is faster than any migration
+re-running the whole pipeline takes twelve minutes, which is faster than any migration
 would be and leaves nothing to get subtly wrong.
 
 ---
@@ -202,13 +245,13 @@ meo_exposure_samples_p                      partitioned, LIST (section_id)
 ├─ meo_exp_s384                             this shard owns ~8 sections
 │  ├─ meo_exp_s384_20260101_w0              ← one task: 261k rows, ~20 MB
 │  ├─ meo_exp_s384_20260101_w1
-│  │  … 12 dates x 6 windows = 72 leaves
+│  │  … 60 dates x 6 windows = 360 leaves
 ├─ meo_exp_s385
 │  … 
-└─ ~576 leaves total, ~10 GB
+└─ ~3,024 leaves total, ~50 GB
 
 meo_exposure_edges_p                        partitioned, RANGE (datetime), monthly
-└─ 12 partitions/year, ~2.9M rows, ~0.2 GB   ← DERIVED in the reduce phase
+└─ 12 partitions/year, ~14.5M rows, ~1.6 GB   ← DERIVED in the reduce phase
 
 meo_sample_points, meo_edges, meo_waypoints  full replicas, ~140 MB
 meo_edge_sections                            full map, 6,700 rows
@@ -224,8 +267,8 @@ trip, and moving a section between shards moves exposure rows only, never geomet
 column sets, in v1's order, so every v1 consumer works unchanged. That is asserted in
 the self-test rather than assumed.
 
-**576 leaves per shard** is comfortable for query planning. Cluster-wide there are
-6,048, but no instance plans over more than its own.
+**3,024 leaves per shard** is comfortable for query planning. Cluster-wide there are
+30,240, but no instance plans over more than its own.
 
 ---
 
@@ -379,7 +422,7 @@ knew.
 
 ### Losing a shard entirely
 
-Its ~10 GB is reproducible from (mesh, ephemeris, section, date, window). Reset its
+Its ~50 GB is reproducible from (mesh, ephemeris, section, date, window). Reset its
 tasks and let the fleet redo them:
 
 ```sql
@@ -402,7 +445,7 @@ profile is allowed to trade durability for throughput.
 | PgBouncer | 2 | 2 vCPU / 1 GB | 4 vCPU / 2 GB |
 | | | | **572 vCPU / 2114 GB** |
 
-**~32 vCPU-hours** for a full annual run. Wide, not long.
+**~111 vCPU-hours** for a full annual run. Wide, not long.
 
 The shards are most of the RAM, deliberately — see §2. If that is not available, the
 model degrades gracefully: `model.py --sweep` shows four shards still reaching 76×, and

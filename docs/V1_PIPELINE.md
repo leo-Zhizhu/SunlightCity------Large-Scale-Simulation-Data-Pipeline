@@ -11,12 +11,13 @@ Everything here is measured on the run that produced the published dataset.
 |---|---|
 | Hardware | one desktop, one PostgreSQL 14 + PostGIS 3 instance |
 | Wall clock | **6 h 00 min** |
-| Raycasts | **1,577,374,560** |
+| Rows written | **1,577,374,560** — one per (sample point, timestep) |
+| Raycasts | **990,240,696** — the 63% of timesteps above the horizon guard |
 | Rate | 73,027 / s — one thread, `Physics.Raycast` on Unity's main thread |
 | Written | **110 GB** to `meo_exposure_samples`, with two indexes maintained inline |
 | Peak RAM | ~250 MB, flat, whether the run covered one day or the full year |
 | Scene | 4,168 waypoints · 6,700 edges · 365,133 sample points · 1,280,954 tree canopies |
-| Coverage | 24 dates (1st + 15th of each month) × 03:00–21:00 × 3-minute steps |
+| Coverage | **12 dates** (one per month) × 360 timesteps (03:00–21:00, every 3 min) |
 
 ---
 
@@ -70,8 +71,8 @@ that would otherwise have to be written from scratch.
                 │  ShadowAwarePathFinder — "Export Exposure"   ◀── 6 hours
                 ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │ 5.  meo_exposure_samples — 1.58e9 rows   ◀── THE PRODUCT             │
-  │     meo_exposure_edges   — 28.9e6 rows   ◀── derived convenience     │
+  │ 5.  meo_exposure_samples — 1.577e9 rows  ◀── THE PRODUCT             │
+  │     meo_exposure_edges   —  28.9e6 rows  ◀── derived convenience     │
   └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -124,8 +125,8 @@ meo_edges          (id, start_wp_id, end_wp_id, length,
 meo_trees          (id, geom, shade_norm)                 -- 1,280,954 canopies
 meo_sample_points  (id, edge_id, sequence_index,
                     distance_from_start, geom, tree_value) -- 365,133 @ 2 m
-meo_exposure_samples (sample_point_id, datetime, is_sunlit) -- 1.58e9  THE PRODUCT
-meo_exposure_edges   (edge_id, datetime, sunlit_sum)        -- 28.9e6  derived
+meo_exposure_samples (sample_point_id, datetime, is_sunlit) -- 1.577e9 THE PRODUCT
+meo_exposure_edges   (edge_id, datetime, sunlit_sum)        --  28.9e6 derived
 ```
 
 Three details in `meo_sample_points` are load-bearing and easy to skim past:
@@ -210,7 +211,7 @@ Despite the name, this component does not search for paths. It orchestrates the
 export. Structure:
 
 ```
-for each of 24 target dates:
+for each of 12 target dates:
     for minute in 03:00 .. 21:00 step 3:          # 361 steps
         point the sun from the ephemeris
         yield WaitForFixedUpdate                  # commit the light transform
@@ -250,6 +251,24 @@ The guard also has a consequence v2 depends on heavily: it bounds the longest
 possible shadow at `H / tan(threshold)`, which is what makes spatial sharding exactly
 correct rather than approximately correct. See
 [ARCHITECTURE.md](ARCHITECTURE.md#3-why-bounding-box-sharding-is-correct-here).
+
+### Rows are not raycasts
+
+Worth separating, because the two get conflated and the difference is ~37%:
+
+- **Rows** are the full cross product. Every sample point gets a row at every
+  timestep — 365,133 × 360 × 12 = **1,577,374,560** — including the timesteps when the
+  sun is below the guard, whose samples are all recorded as shadowed. Downstream needs
+  a value at every timestep, not a gap.
+- **Raycasts** are only the daylight timesteps: **990,240,696**, or 63%. The guard
+  returns before `Physics.Raycast` is reached, so those observations cost a float
+  comparison rather than a BVH traversal.
+
+The 6-hour run and its ~73,000/s therefore describe **rows per second** — the whole
+pipeline, raycasting and buffering and `COPY` together — which is the right unit for
+sizing, and the one the capacity model uses. Live timesteps range from 168 per day at
+the winter solstice to 285 in June, and that spread is what v2's per-window cost
+estimate exploits.
 
 ### Why RAM stays flat at 250 MB
 
@@ -390,12 +409,13 @@ Full setup, including the Unity project download: [`../SetUp Guide.md`](../SetUp
 | | v1 | v2 |
 |---|---|---|
 | **Schema** | `meo_exposure_samples` (sample_point_id, datetime, is_sunlit) | **identical**, behind a view; +section_id/task_id for addressing |
-| **Rows** | 1,577,374,560 | **1,577,374,560** |
+| Dates | 12 (one per month) | **60** (five per month) |
+| **Rows** | 1,577,374,560 | **7,886,872,800** |
 | Raycast call | `Physics.Raycast`, main thread, one at a time | `RaycastCommand.ScheduleBatch`, job system, a timestep at a time |
-| Work unit | a bounding box, run to completion | (section, date, 3 h window) — 6,048 leased tasks |
+| Work unit | a bounding box, run to completion | (section, date, 3 h window) — 30,240 leased tasks |
 | Databases | 1 | 1 coordinator + 10 data shards |
 | Wire format | CSV text, one string per row | binary COPY from a bitset, no allocation |
-| Wall clock | 6 h 00 min | 3 min 20 s |
+| Wall clock | 6 h 00 min (12 dates) | 11 min 38 s (60 dates) |
 | Failure recovery | restart the export (it resumes) | per-task, automatic, no coordinator |
 
 The row count is the point of that table. v2 is faster hardware and better I/O

@@ -7,7 +7,7 @@ For *why* any of it is shaped this way, see [ARCHITECTURE.md](ARCHITECTURE.md),
 [DB_CLUSTER.md](DB_CLUSTER.md) and [TUNING.md](TUNING.md).
 
 **Total time: ~4 hours, almost all of it building the Unity image.** The pipeline itself
-runs in 3 min 20 s.
+runs in 11 min 38 s.
 
 ---
 
@@ -228,7 +228,7 @@ kubectl -n sunlightcity rollout restart statefulset/sunlit-shard
 ```
 
 > ✅ **Check:** `wal_level` really is `minimal`. It needs a restart, not a reload, and
-> without it the ~100 GB WAL-skip does not happen.
+> without it the ~500 GB WAL-skip does not happen.
 > ```bash
 > kubectl -n sunlightcity exec sunlit-shard-0 -- psql -U admin -d sunlit_shard_0 \
 >   -tAc "show wal_level; show synchronous_commit; show max_wal_size"
@@ -316,7 +316,7 @@ python plan_tasks.py --run-id run-2026-annual --shards 10 --workers 50 --provisi
    shard  sections    edges     samples   share  vs mean
        0        11       82      41,203   11.3%   1.014x
        ...
-  tasks             : 6,048  (84 sections x 12 dates x 6 windows)
+  tasks             : 30,240  (84 sections x 60 dates x 6 windows)
   cost spread       : 780.0x cheapest to dearest window
 ```
 
@@ -470,7 +470,7 @@ The report ends with the numbers to compare against [PERFORMANCE.md](PERFORMANCE
   total           : 0:02:35
   throughput      : 14.7M raycasts/s
   per worker      : 294K/s  (v1 single-thread baseline 73K/s)
-  vs v1 end-to-end: 108.2x  (model predicts 108.2x)
+  vs v1 end-to-end: 154.7x  (model predicts 154.7x)
 ```
 
 > ✅ **Check:**
@@ -482,7 +482,7 @@ The report ends with the numbers to compare against [PERFORMANCE.md](PERFORMANCE
 > SELECT * FROM meo_verify_leaf_sizes(60);                 -- expect 0 rows
 > -- and the total is right: it must equal the sample count exactly, because every
 > -- sample point is evaluated at every timestep of every date
-> --   365,133 samples x 360 steps x 12 dates = 1,577,374,560
+> --   365,133 samples x 360 steps x 60 dates = 7,886,872,800
 > SELECT sum(rows_written) FROM meo_tasks WHERE run_id='run-2026-annual';
 > ```
 
@@ -654,7 +654,7 @@ kubectl delete namespace sunlightcity
 
 ## 13. Cost
 
-At 572 vCPU for ~3.5 minutes including spin-up, an annual run is **~32 vCPU-hours**.
+At 572 vCPU for ~12 minutes including spin-up, an annual run is **~111 vCPU-hours**.
 
 The map workers are an unusually good fit for **spot/preemptible** instances:
 lease-based recovery means a reclaimed task costs at most one task's work, and the

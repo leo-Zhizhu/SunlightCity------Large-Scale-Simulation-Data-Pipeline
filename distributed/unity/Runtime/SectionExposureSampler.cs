@@ -43,7 +43,7 @@ namespace SunlightCity.Distributed
     /// and after a window and logs if anything moved.
     ///
     /// v1 allocated, per timestep, a List of Tuple&lt;Guid, string, bool&gt; and an
-    /// interpolated string per sample. That is ~1.58 billion strings and ~4.7
+    /// interpolated string per sample. That is ~7.89 billion strings and ~4.7
     /// billion heap objects over a run, all of it garbage.
     ///
     ///
@@ -268,7 +268,7 @@ namespace SunlightCity.Distributed
                 //
                 // The obvious `_hits[i].collider == null` costs an instance-id to
                 // managed-object lookup per sample — 4,400 dictionary probes per
-                // timestep, 1.58 billion over a run — purely to compare the result
+                // timestep, 7.89 billion over a run — purely to compare the result
                 // against null. Reading the raw id skips all of it.
                 bool sunlit = _hits[i].colliderInstanceID == 0;
 
