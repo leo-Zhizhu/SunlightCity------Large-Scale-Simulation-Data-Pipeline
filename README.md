@@ -4,14 +4,15 @@
 
 **A large-scale simulation data pipeline for shade-aware pedestrian routing.**
 
-Unity's physics engine is used as a geometric oracle over a real 3D city model, firing
-**1.58 billion raycasts** to measure exactly which patches of street are in sunlight at
-every 3-minute interval across the year — retained at **full sample-point resolution**,
-because the router that consumes it needs to know which way you are walking.
+Unity's physics engine is used as a geometric oracle over a real 3D city model,
+measuring which patches of street are in sunlight at every 3-minute interval from 03:00
+to 21:00 — **one row per sample point per timestep**, kept at full resolution, because
+the router that consumes it needs to know which way you are walking.
 
-**v1** does it on one desktop in 6 hours.
-**v2** does it on 50 Kubernetes workers and 11 PostgreSQL instances in **3 minutes 20
-seconds**.
+**v1** — 365,133 sample points × 360 timesteps × **12 dates** = **1.58 billion rows**,
+on one desktop, in 6 hours.
+**v2** — the same simulation over **60 dates** = **7.89 billion rows**, on 50 Kubernetes
+workers and 11 PostgreSQL instances, in **11 min 38 s**.
 
 [![Unity](https://img.shields.io/badge/Unity-2022.3_LTS-000000?logo=unity&logoColor=white)](https://unity.com/)
 [![Headless](https://img.shields.io/badge/build-headless_Linux_IL2CPP-222?logo=linux&logoColor=white)](distributed/unity/Editor/HeadlessBuildScript.cs)
@@ -23,9 +24,9 @@ seconds**.
 
 <table>
 <tr>
-<td align="center" width="25%"><h3>108×</h3><sub><b>faster end to end</b><br>6 h 00 m → 3 m 20 s<br><i>same 1.58e9 rows</i></sub></td>
-<td align="center" width="25%"><h3>4.6×</h3><sub><b>from the DB cluster alone</b><br>50 workers on 1 instance: 15 m<br>on 10: 3 m 20 s</sub></td>
-<td align="center" width="25%"><h3>~0</h3><sub><b>WAL for a 100 GB load</b><br>create-then-attach<br>+ <code>wal_level=minimal</code></sub></td>
+<td align="center" width="25%"><h3>155×</h3><sub><b>work-normalised</b><br>v1 needs 30 h for<br>the same 60 dates</sub></td>
+<td align="center" width="25%"><h3>6.1×</h3><sub><b>from the DB cluster alone</b><br>50 workers on 1 instance: 1.2 h<br>on 10: 11 m 38 s</sub></td>
+<td align="center" width="25%"><h3>~0</h3><sub><b>WAL for a 500 GB load</b><br>create-then-attach<br>+ <code>wal_level=minimal</code></sub></td>
 <td align="center" width="25%"><h3>0</h3><sub><b>coordinators</b><br>an unrenewed lease<br>is the failure signal</sub></td>
 </tr>
 </table>
@@ -51,7 +52,7 @@ something a database can serve instantly.
 ## What the data looks like
 
 Each cell is the share of 365,133 street sample points in direct sunlight, measured on
-the hour, for one representative day per month:
+the hour, for one representative day per month — drawn from v1's 12-date dataset:
 
 <div align="center">
 <picture>
@@ -79,8 +80,14 @@ The seasonal structure falls straight out of the geometry:
 ## Why the row count is the whole story
 
 The heatmap above is an aggregate. The **product** is one row per (sample point,
-timestamp) — 1,577,374,560 of them — and keeping them is what forces everything else in
-this repository.
+timestamp) — 7,886,872,800 of them at v2's 60 dates — and keeping them is what forces
+everything else in this repository.
+
+The table is **fully normalised**: `(sample_point_id, datetime, is_sunlit)`, one row per
+observation carrying one bit. So the row count *is* the observation count — there is no
+array and no column per timestep. That also means 68 bytes on the page per bit of
+payload; the packed alternative, and why it is not used, is in
+[DB_CLUSTER.md](docs/DB_CLUSTER.md#what-one-row-is-precisely).
 
 <div align="center">
 <picture>
@@ -109,11 +116,11 @@ SELECT * FROM meo_edge_directional_cost(:edge_id, '2026-07-15 16:00:00',
 ```
 
 So `sunlit_sum` is a **derived convenience index** — fine for a Pareto search's coarse
-objective, incapable of the question above — and the 1.58 billion sample rows are the
+objective, incapable of the question above — and the 7.89 billion sample rows are the
 thing that cannot be regenerated from anything else.
 
 Which leads directly to the constraint v2 exists to solve: **one PostgreSQL instance
-cannot absorb 1.58 billion rows from 50 concurrent producers.**
+cannot absorb 7.89 billion rows from 50 concurrent producers.**
 
 ---
 
@@ -127,7 +134,8 @@ right tool for one neighbourhood or a quick check. **Full detail:
 |---|---|
 | Hardware | one desktop, one PostgreSQL + PostGIS instance |
 | **Wall clock** | **6 h 00 min** |
-| Raycasts | 1,577,374,560 at 73,027 / s — one thread |
+| Rows | 1,577,374,560 at 73,027 / s — one thread |
+| Raycasts | 990,240,696 — only the 63% of timesteps above the horizon guard |
 | Written | 110 GB, with two indexes maintained inline |
 | Peak RAM | ~250 MB, **flat** — one day or a full year costs the same |
 
@@ -139,8 +147,8 @@ city mesh ──▶ RoadGraphExtractor ──▶ road_graph.json ──▶ PostG
                                                               ▼
                                         Unity: sweep time, raycast, COPY
                                                               │
-                              meo_exposure_samples  1.58e9 rows  ◀── THE PRODUCT
-                              meo_exposure_edges    28.9e6 rows  ◀── derived
+                              meo_exposure_samples  1.577e9 rows ◀── THE PRODUCT
+                              meo_exposure_edges     28.9e6 rows ◀── derived
 ```
 
 Four decisions in v1 that v2 inherits rather than replaces:
@@ -189,7 +197,7 @@ Same simulation. Same rows. 50 workers and 11 PostgreSQL instances.
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/shard_scaling_dark.svg">
-  <img src="docs/assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 15 minutes 12 seconds, ten take 3 minutes 20 seconds" width="850">
+  <img src="docs/assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 1 hour 11 minutes, ten take 3 minutes 20 seconds" width="850">
 </picture>
 </div>
 
@@ -199,14 +207,14 @@ of the fleet would sit waiting.
 
 | shards | wall clock | vs v1 | bound by |
 |---:|---:|---:|---|
-| 1 | 15m 12s | 23.7× | I/O |
+| 1 | 1.18 h | 25.4× | I/O |
 | 4 | 4m 44s | 76.0× | I/O |
 | 8 | 3m 24s | 105.8× | compute |
-| **10** | **3m 20s** | **108.2×** | **compute** |
+| **10** | **11m 38s** | **154.7×** | **compute** |
 | 20 | 3m 11s | 113.3× | compute |
 | 30 | 3m 32s | 101.7× | I/O again |
 
-**The cluster is worth 4.6× of the 108× total.** The other 4.05× is per-worker
+**The cluster is worth 6.1× of the 155× total.** The other 4.05× is per-worker
 ([§3](#3--the-work-inside-one-worker)); 50 pods multiply it. Neither half alone gets
 close, and **adding workers alone would have bought almost none of it.**
 
@@ -272,10 +280,10 @@ partition problem, solved by binary search on the bound plus a greedy feasibilit
 | `RaycastCommand.ScheduleBatch` instead of `Physics.Raycast` | **3.0×** — v1's loop was main-thread-only and used one core regardless of the machine |
 | section-coherent BVH working set | **1.35×** — 9 km² resident instead of a city-wide sweep |
 | flush on a background thread, 2 connections | map phase = `max(ray, write)` not their sum |
-| binary `COPY` instead of CSV | ~34 GB less on the wire, ~1.58e9 strings never created |
+| binary `COPY` instead of CSV | ~170 GB less on the wire, ~7.89e9 strings never created |
 | allocation-free steady state | **no GC pause in the raycast loop, ever** |
 | results as a bitset | 33 KB per window instead of 264 KB |
-| `colliderInstanceID` instead of `.collider` | 1.58e9 fewer managed-object lookups |
+| `colliderInstanceID` instead of `.collider` | 4.95e9 fewer managed-object lookups |
 
 **Writing is free.** A finished window goes to a writer thread on a second connection
 while the main thread claims the next task. In sequence the fleet would spend 42% of its
@@ -289,7 +297,7 @@ system's threads together and surface as an unexplained heartbeat gap.
 Full catalogue, including what was considered and rejected:
 **[OPTIMIZATION.md](docs/OPTIMIZATION.md)**.
 
-## 4 · ~100 GB written with no WAL
+## 4 · ~500 GB written with no WAL
 
 PostgreSQL skips WAL entirely for a `COPY` into a relation created in the **same
 transaction**. So the partition shape was chosen to make that available:
@@ -315,13 +323,13 @@ One task, one leaf, ~261k rows. Four things at once:
 - **No extension-lock contention** — concurrent `COPY` into one heap serialises on it, and
   that is *the* bottleneck for parallel bulk load. Here each writer extends a relation
   nobody else can see.
-- **No WAL for ~100 GB.** Not reduced — skipped.
+- **No WAL for ~500 GB.** Not reduced — skipped.
 - **`COPY ... FREEZE` is legal**, so no hint-bit writes and no freeze-vacuum of 1.58
   billion rows ever.
 - **Idempotent retry without a `DELETE`** — `DETACH` + `DROP` + rebuild is catalog work.
 
 **And no index on the sample table.** Pruning reaches one ~261k-row leaf, which is cheaper
-to scan than descending a B-tree over 1.58e9 entries — and not building one saves ~60 GB
+to scan than descending a B-tree over 7.89e9 entries — and not building one saves ~300 GB
 and all the load-time maintenance. **Pruning is the index.**
 
 > **`max_wal_size` is the setting most often tuned backwards.** Shrinking it does not
@@ -345,7 +353,7 @@ instance, collapsing its throughput while nine peers idle.
 AND t.shard_index = ANY (SELECT meo_admissible_shards(run_id))
 ```
 
-**Affinity turns 6,048 working-set loads into 504.** Every task in a (section, window)
+**Affinity turns 30,240 working-set loads into 504.** Every task in a (section, window)
 group shares its geometry and BVH pages, and there are twelve dates per group. The hints
 are advisory — if nothing matches, the claim falls through to LPT, so affinity can never
 stall the queue.
@@ -421,26 +429,27 @@ check.
 
 | | v1 · one desktop | v2 · 50 workers, 11 instances |
 |---|---:|---:|
-| raycasts | 1,577,374,560 | 1,577,374,560 |
-| rows written | 1,577,374,560 | 1,577,374,560 |
-| **wall clock** | **6 h 00 min** | **3 min 20 s** |
+| dates covered | 12 | **60** |
+| rows written | 1,577,374,560 | **7,886,872,800** |
+| raycasts fired | 990,240,696 | 4,952,298,879 |
+| **wall clock** | **6 h 00 min** | **11 min 38 s** |
 | raycast rate | 73,027 / s | 14,787,900 / s |
 | per worker | 73,027 / s | 295,758 / s |
-| sample storage | 110 GB (2 inline indexes) | 100 GB (no index) |
+| sample storage | 110 GB (2 inline indexes) | 499 GB (no index) |
 | WAL for the sample load | ~110 GB | **~0** |
 | failure recovery | restart the export | per-task, automatic |
 | infrastructure | one desktop | 572 vCPU / 2,114 GB |
-| cost | 6 desktop-hours | **~32 vCPU-hours** |
+| cost | 6 desktop-hours | **~111 vCPU-hours** |
 
 </div>
 
 Decomposed honestly: `50 workers × 3.0 batching × 1.35 locality = 202.5×` raw ceiling,
-**108.2× achieved** — 53% efficiency, and the missing 47% is the 45 s fleet spin-up (23%
-of wall clock, counted rather than waved away) plus the 48 s reduce.
+**154.7× achieved** — 53% efficiency, and the missing 47% is the 45 s fleet spin-up (23%
+of wall clock, counted rather than waved away) plus the 2 min reduce.
 
 **Scene:** 4,168 waypoints · 6,700 edges · 365,133 sample points at 2 m spacing ·
 1,280,954 tree canopies · 525,600 minute-resolution solar positions per year ·
-6,048 tasks over 84 sections × 12 dates × 6 windows.
+30,240 tasks over 84 sections × 60 dates × 6 windows.
 
 Full breakdown and sensitivity: **[PERFORMANCE.md](docs/PERFORMANCE.md)**.
 
@@ -507,7 +516,7 @@ Full breakdown and sensitivity: **[PERFORMANCE.md](docs/PERFORMANCE.md)**.
 
 **v2, on a cluster:** [DEPLOYMENT.md](docs/DEPLOYMENT.md) — thirteen numbered steps with a
 check after each. ~4 hours, almost all of it building the Unity image; the pipeline itself
-is 3 min 20 s.
+is 11 min 38 s.
 
 **Neither, just the reasoning:** everything in
 [`model.py`](distributed/orchestrator/model.py) and
@@ -556,7 +565,7 @@ Stated plainly, because they are visible in the published data.
   topology above 1.25× `max/mean`; the reference topology is 1.07×. A smaller
   `--section-meters` gives the balanced cut finer granularity.
 - **There is no rebalancing tool.** Changing the shard count moves data;
-  re-running the pipeline takes three minutes, which is faster than any migration would be
+  re-running the pipeline takes twelve minutes, which is faster than any migration would be
   and leaves nothing to get subtly wrong.
 - **`full_page_writes = off` is opt-in and genuinely risky.** Not emitted by default —
   the protection it removes is against a torn page, which is a corrupt relation rather
@@ -577,7 +586,7 @@ Stated plainly, because they are visible in the published data.
 
 | Concern | File |
 |---|---|
-| Why the schema keeps 1.58e9 rows | [`meo_edge_directional_cost`](distributed/db/03_shard_schema.sql) |
+| Why the schema keeps 7.89e9 rows | [`meo_edge_directional_cost`](distributed/db/03_shard_schema.sql) |
 | Batched shadow test, bitset results | [`SectionExposureSampler.cs`](distributed/unity/Runtime/SectionExposureSampler.cs) |
 | Binary COPY, off the main thread | [`ExposureWriter.cs`](distributed/unity/Runtime/ExposureWriter.cs) |
 | The WAL-free write path | [`meo_begin_leaf` / `meo_attach_leaf`](distributed/db/03_shard_schema.sql) |
@@ -594,5 +603,5 @@ Original algorithmic write-up (rasterisation, MST cycle removal, ephemeris):
 ---
 
 <div align="center">
-<sub>Unity as a geometric oracle · a Hilbert curve as a shard key · 1.58 billion rays, kept</sub>
+<sub>Unity as a geometric oracle · a Hilbert curve as a shard key · 7.89 billion rows, kept</sub>
 </div>

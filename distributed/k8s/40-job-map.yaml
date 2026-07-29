@@ -30,7 +30,7 @@
 # AND SCALE THE DATABASE CLUSTER WITH IT. Adding workers without adding shards
 # converts a compute-bound pipeline into an I/O-bound one, which is the exact
 # failure this architecture exists to avoid: 50 workers against ONE instance finish
-# in 15m 12s, against ten in 3m 20s. `python model.py --workers-sweep` prints the
+# in 1.18 h, against ten in 11m 38s. `python model.py --workers-sweep` prints the
 # minimum shard count for any fleet size. Past the balance point the per-shard
 # admission cap in meo_claim_task simply makes the extra workers queue, so
 # over-scaling is wasteful rather than harmful.
@@ -59,7 +59,7 @@ spec:
   backoffLimit: 6
 
   # Hard ceiling on the whole phase. Without this a wedged run holds cluster
-  # capacity indefinitely. 2 h is ~35x the expected 1m 47s of map work.
+  # capacity indefinitely. 2 h is ~35x the expected 8m 53s of map work.
   activeDeadlineSeconds: 7200
 
   # Keep finished pods for 1 h so logs are retrievable, then let the TTL

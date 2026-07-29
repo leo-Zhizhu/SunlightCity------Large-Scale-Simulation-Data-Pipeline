@@ -2,8 +2,8 @@
 -- SunlightCity — reduce phase (phase 5 of 6)          ***  DATA SHARD ONLY  ***
 --
 -- Run on EACH shard once its tasks have drained. The ten shards run this
--- concurrently and independently — that is what makes the reduce phase ~48 s
--- instead of ~8 minutes.
+-- concurrently and independently — that is what makes the reduce phase ~2 minutes
+-- instead of ~20.
 --
 --
 -- WHY THE REDUCE PHASE IS THIS THIN
@@ -203,7 +203,7 @@ COMMIT;
 -- CONCURRENTLY is not used: it is disallowed on partitioned tables, and would be
 -- the wrong choice anyway since nothing is reading this yet.
 --
--- Note the scale. This indexes 2.9 million rows per shard, not 158 million,
+-- Note the scale. This indexes 14.5 million rows per shard, not 789 million,
 -- because the sample table has no index at all. That asymmetry is why the reduce
 -- phase is seconds rather than hours.
 -- =============================================================================
@@ -235,7 +235,7 @@ CREATE INDEX IF NOT EXISTS idx_meo_exp_edges_p_section
 -- Not optional. The exposure leaves went from empty to ~10^8 rows with autovacuum
 -- switched off (see 04), so the planner's statistics still say "empty". Until
 -- ANALYZE runs, every query against them plans as though the tables were tiny and
--- picks catastrophically wrong plans — a nested loop over 158 million rows, for
+-- picks catastrophically wrong plans — a nested loop over 789 million rows, for
 -- instance.
 --
 -- ANALYZE here covers the derived table and the geometry. The 576 sample leaves
@@ -292,7 +292,7 @@ WHERE n.nspname = 'public' AND c.relkind = 'r'
 --
 -- pg_total_relation_size() on a partitioned PARENT returns the parent's own size,
 -- which is always zero — a partitioned table holds no pages itself. Calling it
--- directly would report "0 bytes" for 100 GB of exposure data, in exactly the
+-- directly would report "0 bytes" for 500 GB of exposure data, in exactly the
 -- summary an operator uses to confirm the load worked. pg_partition_tree walks
 -- the whole hierarchy; the relkind filter keeps intermediate levels (which are
 -- also zero) from being double-counted as leaves.

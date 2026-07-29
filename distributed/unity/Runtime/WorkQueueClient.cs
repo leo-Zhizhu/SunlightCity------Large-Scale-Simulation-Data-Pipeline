@@ -179,7 +179,7 @@ namespace SunlightCity.Distributed
         /// The two hints are the caller's currently-loaded working set. The
         /// coordinator will hand back a task matching them if one is available on an
         /// admissible shard, so the geometry and the BVH pages stay warm — 504
-        /// working-set loads across the fleet instead of 6,048. If nothing matches it
+        /// working-set loads across the fleet instead of 30,240. If nothing matches it
         /// falls through to longest-processing-time-first, so affinity can never
         /// stall the queue or unbalance the cluster.
         ///

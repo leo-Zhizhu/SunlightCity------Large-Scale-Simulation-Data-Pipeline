@@ -11,7 +11,7 @@
 #
 # There is therefore nothing to merge across shards — no shuffle, no barrier, no
 # coordinator gathering partial sums. Ten instances each aggregate their own tenth of
-# a billion rows in parallel and stop, which is why this is ~48 s rather than ~8 min.
+# a billion rows in parallel and stop, which is why this is ~2 min rather than ~20.
 #
 # Had sections been defined by sample-point position instead, ~12% of edges would
 # straddle a boundary, this pod would have needed a distributed sum, and every
@@ -45,7 +45,7 @@ spec:
   # burning time re-running aggregates.
   backoffLimit: 2
 
-  # 2 h. The expected figure is ~48 s; the margin is for a shard whose page cache is
+  # 2 h. The expected figure is ~2 min; the margin is for a shard whose page cache is
   # cold, which turns the rollup's sequential scan into real I/O.
   activeDeadlineSeconds: 7200
   ttlSecondsAfterFinished: 86400   # keep a day: this pod's log is the run's report

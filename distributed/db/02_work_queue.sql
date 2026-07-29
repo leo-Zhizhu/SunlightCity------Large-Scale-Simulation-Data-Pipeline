@@ -29,7 +29,7 @@
 -- -------------------------------------------
 -- SELECT ... FOR UPDATE SKIP LOCKED makes Postgres a correct, efficient queue,
 -- and the pipeline already depends on Postgres. A broker would add a second
--- failure domain for no gain at this scale (6,048 tasks, 50 consumers), and it
+-- failure domain for no gain at this scale (30,240 tasks, 50 consumers), and it
 -- would cost the one thing that actually matters here: with an external broker,
 -- claiming a task and recording its completion are two systems, and you inherit
 -- the dual-write problem.
@@ -211,11 +211,11 @@ $$ LANGUAGE sql STABLE STRICT;
 --    A task's rays all originate inside one section during one 3 h window, so the
 --    colliders they can reach — the section plus its 2,286 m shadow halo, swept
 --    over that window's azimuth arc — are a working set the worker has already
---    paged in. There are 84 x 6 = 504 such working sets but 6,048 tasks, so
+--    paged in. There are 84 x 6 = 504 such working sets but 30,240 tasks, so
 --    dispatching a task that matches the caller's current (section, window) reuses
 --    the warm set twelve times out of twelve instead of once.
 --
---    Without affinity the fleet would fault in a fresh working set for all 6,048
+--    Without affinity the fleet would fault in a fresh working set for all 30,240
 --    tasks. With it, 504 times. The parameters are hints: if no matching task is
 --    admissible the function falls straight through to LPT, so affinity can never
 --    stall the queue or unbalance it.

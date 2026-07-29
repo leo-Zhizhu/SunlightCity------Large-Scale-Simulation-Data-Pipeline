@@ -1,6 +1,6 @@
 # Low-level optimisation
 
-Where the per-worker 4.05× comes from, and where the ~100 GB of WAL went. Each entry
+Where the per-worker 4.05× comes from, and where the ~500 GB of WAL went. Each entry
 states what it costs, what it buys, and how to tell whether it is working.
 
 The cluster-level decisions are in [DB_CLUSTER.md](DB_CLUSTER.md); the two multiply.
@@ -14,15 +14,15 @@ The cluster-level decisions are in [DB_CLUSTER.md](DB_CLUSTER.md); the two multi
 | 1 | `RaycastCommand.ScheduleBatch` instead of `Physics.Raycast` | **3.0×** raycast rate | log line: `k/s` per task |
 | 2 | section-coherent BVH working set | **1.35×** raycast rate | `perf stat -e LLC-load-misses` |
 | 3 | flush on a background thread, 2 connections | map phase = `max(ray, write)` not their sum | `26% idle` in the phase figure |
-| 4 | binary `COPY` instead of CSV | ~34 GB less on the wire, no per-row string | `pg_stat_statements` bytes |
+| 4 | binary `COPY` instead of CSV | ~170 GB less on the wire, no per-row string | `pg_stat_statements` bytes |
 | 5 | allocation-free steady state | no GC pause in the raycast loop | `AssertNoGarbageCollected()` |
 | 6 | results as a bitset | 33 KB per window instead of 264 KB | — |
-| 7 | `colliderInstanceID` instead of `.collider` | 1.58e9 fewer managed lookups | — |
+| 7 | `colliderInstanceID` instead of `.collider` | 4.95e9 fewer managed lookups | — |
 | 8 | struct-of-arrays sample layout | 5 rays per cache line | — |
-| 9 | create-then-attach + `wal_level=minimal` | **~100 GB of WAL → ~0** | `pg_current_wal_lsn()` |
+| 9 | create-then-attach + `wal_level=minimal` | **~500 GB of WAL → ~0** | `pg_current_wal_lsn()` |
 | 10 | `COPY ... FREEZE` | no hint-bit writes, no freeze-vacuum ever | `pg_visibility` |
-| 11 | no index on 1.58e9 rows | ~60 GB and all load-time maintenance | `\d+ meo_exposure_samples_p` |
-| 12 | `fillfactor = 100` on append-only leaves | ~10 GB, 10% fewer pages per scan | `pg_class.reloptions` |
+| 11 | no index on 7.89e9 rows | ~300 GB and all load-time maintenance | `\d+ meo_exposure_samples_p` |
+| 12 | `fillfactor = 100` on append-only leaves | ~50 GB, 10% fewer pages per scan | `pg_class.reloptions` |
 | 13 | `fillfactor = 70` on the work queue | heartbeats become HOT, no index write | `pg_stat_user_tables.n_tup_hot_upd` |
 | 14 | step-major row order | heap clustered on `datetime` for free | `pg_stats.correlation` |
 
@@ -32,7 +32,8 @@ The cluster-level decisions are in [DB_CLUSTER.md](DB_CLUSTER.md); the two multi
 
 ## 1. Batched raycasts — 3.0×
 
-v1 called `Physics.Raycast` once per sample, on Unity's main thread, 1.58 billion times.
+v1 called `Physics.Raycast` once per sample, on Unity's main thread — 990 million times
+for its 12 dates, once for each timestep the horizon guard did not already resolve.
 `Physics.Raycast` **must** run on the main thread, so that loop used one core no matter
 how many the machine had. A 16-core desktop ran it exactly as fast as a 4-core one.
 
@@ -146,8 +147,8 @@ writer.Write(p.SectionId, NpgsqlDbType.Integer);
 writer.Write(p.TaskId,    NpgsqlDbType.Bigint);
 ```
 
-~30 bytes on the wire, no client allocation, no server-side parse. At 1.58 billion rows
-that is **~34 GB less network traffic** and ~1.58 billion strings never created.
+~30 bytes on the wire, no client allocation, no server-side parse. At 7.89 billion rows
+that is **~170 GB less network traffic** and ~7.89 billion strings never created.
 
 > `writer.Complete()` is mandatory. Without it, the importer's `Dispose` treats the
 > import as cancelled and the rows are **silently discarded**. It is the classic binary-
@@ -180,7 +181,8 @@ threads together, and the resulting pause shows up as a heartbeat gap on a 900 s
 so the symptom is "unexplained lease loss", not "memory pressure".
 
 v1 allocated, per timestep, a `List<Tuple<Guid, string, bool>>` plus an interpolated
-string per sample: ~1.58 billion strings and ~4.7 billion heap objects per run, all
+string per sample: for v1's 12 dates that was ~1.58 billion strings and ~4.7 billion
+heap objects; at v2's 60 it would have been five times more, all
 garbage.
 
 The claim is made **checkable rather than aspirational**:
@@ -230,7 +232,7 @@ bool sunlit = _hits[i].colliderInstanceID == 0;     // no hit
 ```
 
 The obvious `_hits[i].collider == null` costs an instance-id → managed-object lookup per
-sample — 4,400 dictionary probes per timestep, **1.58 billion over a run** — purely to
+sample — 4,400 dictionary probes per timestep, **4.95 billion over a run** — purely to
 compare the result against null. Reading the raw id skips all of it.
 
 ## 8. Struct-of-arrays
@@ -252,7 +254,7 @@ direction changes across a window.
 
 # Database side
 
-## 9. ~100 GB of WAL, skipped entirely
+## 9. ~500 GB of WAL, skipped entirely
 
 The headline database result. PostgreSQL skips WAL for a `COPY` into a relation created
 in the **same transaction**, under `wal_level = minimal`. Because every task builds its
@@ -293,7 +295,7 @@ Same precondition as §9, and it removes two later costs:
 - **No hint-bit writes on first read.** Ordinarily the first reader of a tuple sets its
   visibility hint bits, which dirties the page — so the first query after a bulk load
   rewrites the whole table. With `FREEZE` the tuples are already visible to everyone.
-- **No freeze-vacuum, ever.** 1.58 billion rows would otherwise eventually need an
+- **No freeze-vacuum, ever.** 7.89 billion rows would otherwise eventually need an
   anti-wraparound vacuum to freeze them.
 
 It is also what makes `autovacuum_enabled = off` on the leaves *safe*. Normally
@@ -301,7 +303,7 @@ disabling autovacuum on a large table risks transaction-id wraparound; here ther
 nothing to freeze. (Anti-wraparound vacuum still runs regardless — PostgreSQL does not
 let you opt out — but it finds nothing to rewrite.)
 
-## 11. No index on 1.58 billion rows
+## 11. No index on 7.89 billion rows
 
 ```sql
 CREATE TABLE meo_exposure_samples_p (…) PARTITION BY LIST (section_id);
@@ -309,12 +311,12 @@ CREATE TABLE meo_exposure_samples_p (…) PARTITION BY LIST (section_id);
 ```
 
 An index maintained during the load would cost a B-tree descent and possibly a page
-split per `COPY`'d row, turn the upper levels into a contention point, and occupy ~60 GB
+split per `COPY`'d row, turn the upper levels into a contention point, and occupy ~300 GB
 — more than half the data it indexes.
 
 And it would answer no question that pruning does not answer better. The only lookup is
 "this edge's samples at this timestamp", and pruning reaches one ~261k-row leaf that is
-cheaper to scan sequentially than to descend a B-tree over 1.58e9 entries for.
+cheaper to scan sequentially than to descend a B-tree over 7.89e9 entries for.
 
 ```
 EXPLAIN SELECT count(*) FROM meo_exposure_samples_p
@@ -333,7 +335,7 @@ rather than appended to.
 
 Indexes on the *derived* edge table are built after the load, where they cost one large
 sequential sort bounded by `maintenance_work_mem` instead of a billion random descents —
-and over 2.9M rows per shard rather than 158M.
+and over 14.5M rows per shard rather than 789M.
 
 ## 12 & 13. `fillfactor`, both directions
 
@@ -341,7 +343,7 @@ The same parameter, opposite values, for opposite reasons.
 
 **Append-only exposure leaves: `fillfactor = 100`.** The default 90 reserves a tenth of
 every page for future HOT updates that will never come — these are written once by
-`COPY` and never updated. On 100 GB that is ~10 GB wasted and 10% more pages on every
+`COPY` and never updated. On 500 GB that is ~50 GB wasted and 10% more pages on every
 sequential scan, which is their only access pattern.
 
 **The work queue: `fillfactor = 70`.** `meo_tasks` is a few thousand rows taking ~42

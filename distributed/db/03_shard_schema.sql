@@ -31,6 +31,34 @@
 -- actually calls.
 --
 --
+-- WHAT ONE ROW IS, PRECISELY
+-- --------------------------
+-- The table is FULLY NORMALISED — long and narrow, not wide. One row is ONE
+-- (sample point, timestep) observation and it carries ONE BIT of information:
+--
+--     ('a1b2…'::uuid, '2026-06-15 15:00:00', true, 384, 91027)
+--
+-- There is no array, no column per timestep, nothing packed. So the row count IS
+-- the observation count, by construction:
+--
+--     365,133 sample points x 360 timesteps x 60 dates = 7,886,872,800 rows
+--
+-- (v1's 12 dates gave 1,577,374,560 of the same rows.) That identity is worth
+-- stating: "N billion observations" and "N billion rows" being the same number is a
+-- property of THIS encoding rather than an inevitability.
+--
+-- The encoding is expensive: 68 bytes on the page to carry one bit, which is 0.18%
+-- payload efficiency. A packed alternative — one row per (sample point, date)
+-- holding a 360-bit bitmap — would be 21.9M rows and about 2 GB instead of 500 GB,
+-- roughly 245x smaller, and the whole dataset would fit on a single instance.
+--
+-- It is not used because the v1 column set is a hard requirement and every v1
+-- consumer selects those three columns by name. That is a real cost knowingly
+-- accepted, not an oversight. Note the compatibility VIEWS below are what would make
+-- a packed encoding introducible later without breaking any consumer: the view keeps
+-- promising three columns while the storage underneath changes shape.
+--
+--
 -- THE PARTITION SHAPE, AND WHY IT IS EXACTLY THIS
 -- ----------------------------------------------
 --     meo_exposure_samples_p
@@ -50,20 +78,27 @@
 --   2. NO WAL AT ALL for the sample data. COPY into a relation created in the
 --      SAME transaction skips WAL entirely under wal_level=minimal. Because the
 --      leaf is built from scratch per task rather than appended to a pre-existing
---      partition, all ~100 GB is written without a WAL record. See 04.
+--      partition, all ~500 GB is written without a WAL record. See 04.
 --
 --   3. COPY ... FREEZE is legal, for the same reason (the relation is new in this
 --      transaction). Tuples land already frozen, so there is no hint-bit write on
---      first read and no freeze-vacuum of 1.58 billion rows to pay later.
+--      first read and no freeze-vacuum of 7.89 billion rows to pay later.
 --
 --   4. IDEMPOTENT RETRY WITHOUT A DELETE. Replacing a task's output is DETACH +
 --      DROP + rebuild, which is catalog work. The alternative — DELETE ... WHERE
 --      task_id = N over 261k rows — would generate WAL, bloat, and vacuum debt on
 --      every retry.
 --
--- Leaf count per shard: ~8 sections x 12 dates x 6 windows = ~576, each ~261k
--- rows / ~20 MB. Small enough that planning over the tree stays cheap, large
--- enough that a leaf scan is sequential.
+-- Leaf count per shard: ~8 sections x 60 dates x 6 windows = ~3,024, each ~261k
+-- rows / ~17 MB.
+--
+-- Three thousand relations on one instance is a lot, and the TWO-LEVEL tree is what
+-- keeps it cheap. Pruning resolves the LIST level over ~8 section values, then the
+-- RANGE level over the ~360 datetime bounds inside the one section it selected —
+-- never 3,024 bounds in a single flat list. A one-level design keyed on datetime
+-- alone would have to consider every leaf on the instance for every query, and would
+-- also give a task no relation of its own to COPY into, forfeiting all four
+-- properties above.
 --
 -- Idempotent: safe to re-run.
 -- =============================================================================
@@ -143,8 +178,8 @@ CREATE TABLE IF NOT EXISTS meo_shard_sections (
 -- 2. Sample-level exposure — the PRIMARY output. v1's three columns, plus two
 --    for addressing.
 --
--- No PRIMARY KEY and no index, deliberately. A unique index over 1.58 billion
--- rows would dominate insert cost, cost ~60 GB, and buy nothing: the only lookups
+-- No PRIMARY KEY and no index, deliberately. A unique index over 7.89 billion
+-- rows would dominate insert cost, cost ~300 GB, and buy nothing: the only lookups
 -- are "this edge's samples at this timestamp", and partition pruning already
 -- narrows that to one ~261k-row leaf that is cheaper to scan sequentially than to
 -- descend a B-tree for. Pruning IS the index here.

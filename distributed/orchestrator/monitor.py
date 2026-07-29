@@ -233,7 +233,7 @@ def render(cur, run_id: str, st: dict, clear: bool) -> None:
         elapsed = (now.astimezone() - st["started_at"]).total_seconds()
         if elapsed > 0 and rays:
             rate = rays / elapsed
-            # v1 reference: 1.577e9 raycasts in 6.0 h on one desktop main thread.
+            # v1 reference: 7.887e9 raycasts in 6.0 h on one desktop main thread.
             row(f"  raycasts {human(rays):>10}   rate {human(rate):>8}/s"
                 f"   vs 1 node {rate / model.V1_RAYCAST_RATE:>6.1f}x")
 

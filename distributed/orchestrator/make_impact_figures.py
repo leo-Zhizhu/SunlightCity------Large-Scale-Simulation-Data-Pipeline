@@ -12,9 +12,9 @@ disagree with the capacity model or with the docs that quote it.
 Figures
 -------
   1. shard_scaling      wall clock vs shard count at a fixed 50 workers. The
-                        headline result: the same fleet finishes in 15m 12s on one
-                        database instance and 3m 20s on ten.
-  2. phase_breakdown    where the 3m 20s goes, and why writing is free (it overlaps
+                        headline result: the same fleet finishes in 1.18 h on one
+                        database instance and 11m 38s on ten.
+  2. phase_breakdown    where the 11m 38s goes, and why writing is free (it overlaps
                         raycasting) while the reduce phase is not.
   3. directional_cost   the same edge at the same instant, walked both ways. This
                         is why the schema keeps per-sample rows.

@@ -1,20 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="860" height="400" viewBox="0 0 860 400" role="img" aria-label="Wall clock against database shard count at a fixed 50 workers. One instance takes 15m 12s; ten take 3m 20s. Below eight shards the fleet is I/O-bound and waiting on the database.">
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="400" viewBox="0 0 860 400" role="img" aria-label="Wall clock against database shard count at a fixed 50 workers. One instance takes 1.2 h; ten take 11m 38s. Below eight shards the fleet is I/O-bound and waiting on the database.">
 <rect width="860" height="400" fill="#1a1a19"/>
 <text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">The bottleneck was never the raycasting</text>
 <text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Same 50 workers, same code. Only the number of PostgreSQL instances changes.</text>
 <text x="820.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MODELLED</text>
 <line x1="78.0" y1="304.0" x2="690.0" y2="304.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="68.0" y="308.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">0m</text>
-<line x1="78.0" y1="263.8" x2="690.0" y2="263.8" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
-<text x="68.0" y="267.8" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">3m</text>
-<line x1="78.0" y1="223.6" x2="690.0" y2="223.6" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
-<text x="68.0" y="227.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">6m</text>
-<line x1="78.0" y1="183.3" x2="690.0" y2="183.3" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
-<text x="68.0" y="187.3" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">9m</text>
-<line x1="78.0" y1="143.1" x2="690.0" y2="143.1" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
-<text x="68.0" y="147.1" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">12m</text>
-<line x1="78.0" y1="102.9" x2="690.0" y2="102.9" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
-<text x="68.0" y="106.9" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">15m</text>
+<line x1="78.0" y1="295.4" x2="690.0" y2="295.4" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="299.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">3m</text>
+<line x1="78.0" y1="286.8" x2="690.0" y2="286.8" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="290.8" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">6m</text>
+<line x1="78.0" y1="278.2" x2="690.0" y2="278.2" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="282.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">9m</text>
+<line x1="78.0" y1="269.6" x2="690.0" y2="269.6" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="273.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">12m</text>
+<line x1="78.0" y1="260.9" x2="690.0" y2="260.9" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="264.9" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">15m</text>
+<line x1="78.0" y1="252.3" x2="690.0" y2="252.3" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="256.3" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">18m</text>
+<line x1="78.0" y1="243.7" x2="690.0" y2="243.7" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="247.7" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">21m</text>
+<line x1="78.0" y1="235.1" x2="690.0" y2="235.1" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="239.1" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">24m</text>
+<line x1="78.0" y1="226.5" x2="690.0" y2="226.5" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="230.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">27m</text>
+<line x1="78.0" y1="217.9" x2="690.0" y2="217.9" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="221.9" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">30m</text>
+<line x1="78.0" y1="209.3" x2="690.0" y2="209.3" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="213.3" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">33m</text>
+<line x1="78.0" y1="200.7" x2="690.0" y2="200.7" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="204.7" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">36m</text>
+<line x1="78.0" y1="192.1" x2="690.0" y2="192.1" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="196.1" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">39m</text>
+<line x1="78.0" y1="183.4" x2="690.0" y2="183.4" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="187.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">42m</text>
+<line x1="78.0" y1="174.8" x2="690.0" y2="174.8" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="178.8" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">45m</text>
+<line x1="78.0" y1="166.2" x2="690.0" y2="166.2" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="170.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">48m</text>
+<line x1="78.0" y1="157.6" x2="690.0" y2="157.6" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="161.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">51m</text>
+<line x1="78.0" y1="149.0" x2="690.0" y2="149.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="153.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">54m</text>
+<line x1="78.0" y1="140.4" x2="690.0" y2="140.4" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="144.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">57m</text>
+<line x1="78.0" y1="131.8" x2="690.0" y2="131.8" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="135.8" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">60m</text>
+<line x1="78.0" y1="123.2" x2="690.0" y2="123.2" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="127.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">63m</text>
+<line x1="78.0" y1="114.6" x2="690.0" y2="114.6" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="118.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">66m</text>
+<line x1="78.0" y1="105.9" x2="690.0" y2="105.9" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="109.9" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">69m</text>
+<line x1="78.0" y1="97.3" x2="690.0" y2="97.3" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="101.3" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">72m</text>
+<line x1="78.0" y1="88.7" x2="690.0" y2="88.7" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<text x="68.0" y="92.7" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">75m</text>
 <text x="78.0" y="322.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">1</text>
 <text x="206.8" y="322.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">5</text>
 <text x="367.9" y="322.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">10</text>
@@ -24,19 +64,19 @@
 <rect x="78.0" y="88.0" width="193.3" height="216.0" rx="0" fill="#e66767" opacity="0.07"/>
 <text x="174.6" y="243.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#e66767" text-anchor="middle" style="font-variant-numeric:tabular-nums">I/O-bound</text>
 <text x="174.6" y="258.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">fleet waits on the DB</text>
-<path d="M 78.0 100.2 L 110.2 193.7 L 142.4 224.9 L 174.6 240.5 L 206.8 249.8 L 239.1 256.1 L 271.3 257.7 L 303.5 258.4 L 335.7 258.9 L 367.9 259.4 L 400.1 259.8 L 432.3 260.1 L 464.5 260.3 L 496.7 260.5 L 528.9 260.7 L 561.2 260.9 L 593.4 259.0 L 625.6 260.5 L 657.8 261.3 L 690.0 261.4" fill="none" stroke="#5598e7" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 78.0 100.2 L 110.2 200.3 L 142.4 233.7 L 174.6 250.4 L 206.8 260.4 L 239.1 267.0 L 271.3 268.8 L 303.5 269.5 L 335.7 270.1 L 367.9 270.6 L 400.1 271.0 L 432.3 271.3 L 464.5 271.6 L 496.7 271.8 L 528.9 272.0 L 561.2 272.2 L 593.4 270.1 L 625.6 271.8 L 657.8 272.6 L 690.0 272.7" fill="none" stroke="#5598e7" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
 <circle cx="78.0" cy="100.2" r="5" fill="#6b6a66" stroke="#1a1a19" stroke-width="2"/>
-<text x="90.0" y="94.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">1 shard — 15m 12s</text>
-<text x="90.0" y="108.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">24x vs v1</text>
-<circle cx="367.9" cy="259.4" r="5" fill="#5598e7" stroke="#1a1a19" stroke-width="2"/>
-<text x="379.9" y="253.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">10 shards — 3m 20s</text>
-<text x="379.9" y="267.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">108x vs v1</text>
+<text x="90.0" y="94.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">1 shard — 1.2 h</text>
+<text x="90.0" y="108.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">5x vs v1</text>
+<circle cx="367.9" cy="270.6" r="5" fill="#5598e7" stroke="#1a1a19" stroke-width="2"/>
+<text x="379.9" y="264.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">10 shards — 11m 38s</text>
+<text x="379.9" y="278.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">31x vs v1</text>
 <line x1="367.9" y1="88.0" x2="367.9" y2="304.0" stroke="#f0803c" stroke-width="1.5" stroke-linecap="butt" stroke-dasharray="4 3"/>
 <text x="367.9" y="82.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#f0803c" text-anchor="middle" style="font-variant-numeric:tabular-nums">deployed</text>
 <rect x="712.0" y="88.0" width="128.0" height="96.0" rx="6" fill="#242422"/>
-<text x="724.0" y="110.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#5598e7" text-anchor="start" style="font-variant-numeric:tabular-nums">4.6x</text>
+<text x="724.0" y="110.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#5598e7" text-anchor="start" style="font-variant-numeric:tabular-nums">6.1x</text>
 <text x="724.0" y="128.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">from the cluster</text>
-<text x="724.0" y="148.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">of the 108x total</text>
+<text x="724.0" y="148.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">of the 31x total</text>
 <text x="724.0" y="164.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the other 4.1x</text>
 <text x="724.0" y="176.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">is per-worker</text>
 <rect x="40.0" y="326.0" width="780.0" height="56.0" rx="6" fill="#242422"/>

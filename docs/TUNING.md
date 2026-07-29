@@ -37,7 +37,7 @@ that produces them cannot drift apart.
 | replication / PITR | **impossible** | available |
 
 During the load a shard's contents are reproducible from (mesh, ephemeris, section, date,
-window) in about three minutes, so WAL is pure overhead. Once loaded, the dataset is the
+window) in about twelve minutes, so WAL is pure overhead. Once loaded, the dataset is the
 input to something else, and "restore from a replica" is seconds while "re-run the
 pipeline" is a cluster and a Unity licence. WAL is how you avoid needing either.
 
@@ -54,8 +54,8 @@ of a property of this specific workload:
 > Every byte a shard writes is **reproducible**. Its output is a deterministic function
 > of (city mesh, solar ephemeris, section, date, window); the coordinator's work queue
 > records exactly which tasks completed; a lost task simply re-runs. Losing a shard to a
-> power cut costs wall-clock time, not information — about 20 seconds of fleet time for
-> one instance's 605 tasks.
+> power cut costs wall-clock time, not information — about 100 seconds of fleet time for
+> one instance's 3,024 tasks.
 
 Apply the bulk profile to a database where that is not true and you are simply running an
 unsafe database.
@@ -91,12 +91,12 @@ BEGIN;
 COMMIT;
 ```
 
-**~100 GB of sample data written across the cluster without a WAL record.** Not reduced —
+**~500 GB of sample data written across the cluster without a WAL record.** Not reduced —
 skipped. It is the single largest database-side effect in the pipeline.
 
 `FREEZE` has the same precondition and removes two later costs: no hint-bit write on
 first read (which would otherwise rewrite the whole table on the first query after the
-load), and no freeze-vacuum of 1.58 billion rows ever.
+load), and no freeze-vacuum of 7.89 billion rows ever.
 
 **Verify it rather than trusting it:**
 
@@ -146,8 +146,8 @@ size was wrong by an order of magnitude. The same correction applies to `work_me
 `max_connections`.
 
 What `max_wal_size` actually has to absorb here is *not* the sample load (which emits
-almost no WAL) but the reduce phase's edge rollup — a fully-logged `INSERT` of ~2.9M rows
-— plus its indexes.
+almost no WAL) but the reduce phase's edge rollup — a fully-logged `INSERT` of ~14.5M
+rows per shard — plus its indexes.
 
 ---
 
@@ -215,7 +215,7 @@ The 25% is a **hard ceiling, never overridden**:
 | setting | shard bulk | shard serving | coordinator | why |
 |---|---|---|---|---|
 | `shared_buffers` | 16 GB | 16 GB | 8 GB | 25% of RAM, capped. Larger is **not** better for writes: PostgreSQL still leans on the OS page cache, and an oversized pool lengthens checkpoint scans and enlarges each checkpoint's dirty set. |
-| `effective_cache_size` | 96 GB | 96 GB | 24 GB | A shard's whole ~10 GB slice fits here many times over, which is why the reduce phase's aggregate never touches disk. |
+| `effective_cache_size` | 96 GB | 96 GB | 24 GB | A shard's whole ~50 GB slice fits here many times over, which is why the reduce phase's aggregate never touches disk. |
 | `work_mem` | 256 MB | 64 MB | 32 MB | Reduced 4× for serving (many small queries, not a few huge sorts) and again for the coordinator (single-row lookups). |
 | `maintenance_work_mem` | 16 GB | 2 GB | 1 GB | The single largest lever on post-load index-build time, and during the load nothing else on the instance wants memory. |
 | `huge_pages` | `try` | `try` | `try` | A 16 GB pool through 4 KB pages needs 4M page-table entries; 2 MB pages cut that to 8,192. `try` so startup survives a host with none reserved — but reserve them and check `SHOW huge_pages_status` says `on`. |
@@ -233,8 +233,8 @@ the exposure leaves while preserving the statistics the reduce phase depends on:
 
 | table | `fillfactor` | autovacuum | rationale |
 |---|---:|---|---|
-| exposure sample leaves | **100** | **off** | Written once by `COPY`, never updated, never deleted. The default `fillfactor = 90` would reserve a tenth of every page for HOT updates that never come — ~10 GB wasted and 10% more pages on every scan, their only access pattern. Switching autovacuum off is safe **only because of `COPY ... FREEZE`**: the tuples arrive already frozen, so there is nothing for a freeze vacuum to do. |
-| derived edge partitions | 100 | on, vacuum threshold 2×10⁹ | Also append-only, but this is the serving hot path and the planner's estimate for `WHERE datetime = …` decides between an index scan and a sequential scan of a 2.4M-row partition. `ANALYZE` stays responsive. |
+| exposure sample leaves | **100** | **off** | Written once by `COPY`, never updated, never deleted. The default `fillfactor = 90` would reserve a tenth of every page for HOT updates that never come — ~50 GB wasted and 10% more pages on every scan, their only access pattern. Switching autovacuum off is safe **only because of `COPY ... FREEZE`**: the tuples arrive already frozen, so there is nothing for a freeze vacuum to do. |
+| derived edge partitions | 100 | on, vacuum threshold 2×10⁹ | Also append-only, but this is the serving hot path and the planner's estimate for `WHERE datetime = …` decides between an index scan and a sequential scan of a 12M-row partition. `ANALYZE` stays responsive. |
 | static geometry | 100 | default | Read by every directional query, never written after replication. |
 
 **On the coordinator**, the most aggressive settings in the whole deployment, and they
@@ -286,11 +286,11 @@ Building afterwards instead:
 - yields a **dense, unfragmented** tree instead of one ~70% full from splits.
 
 **And the scale is different from what you might expect.** The reduce phase indexes 2.9
-million rows per shard, not 158 million, because the sample table gets **no index at
+million rows per shard, not 789 million, because the sample table gets **no index at
 all** — partition pruning reaches one ~261k-row leaf, which is cheaper to scan than a
-B-tree descent over 1.58e9 entries, and not building one saves ~60 GB. That asymmetry is
+B-tree descent over 7.89e9 entries, and not building one saves ~300 GB. That asymmetry is
 why the reduce phase is seconds rather than hours. See
-[OPTIMIZATION.md §11](OPTIMIZATION.md#11-no-index-on-158-billion-rows).
+[OPTIMIZATION.md §11](OPTIMIZATION.md#11-no-index-on-789-billion-rows).
 
 `CONCURRENTLY` is not used: it is disallowed on partitioned tables, and would be the
 wrong choice anyway since nothing is reading yet.
@@ -300,9 +300,9 @@ wrong choice anyway since nothing is reading yet.
 The leaves went from empty to ~10⁸ rows with autovacuum held away from them, so the
 planner's statistics still say "empty". Until `ANALYZE` runs, every query against them
 plans as though the tables were tiny and picks catastrophically wrong plans — a nested
-loop over 158 million rows, for instance.
+loop over 789 million rows, for instance.
 
-`reduce_finalize.py` runs it per shard. For the 576 leaves, `vacuumdb --analyze --jobs 8`
+`reduce_finalize.py` runs it per shard. For the 3,024 leaves, `vacuumdb --analyze --jobs 8`
 is ~8× faster than doing them serially from one session.
 
 ---

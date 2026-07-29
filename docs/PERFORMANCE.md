@@ -13,23 +13,29 @@ single source for the README, these docs, the generated charts and
 
 | | v1 — one desktop, one database | v2 — 50 workers, 11 instances |
 |---|---:|---:|
-| raycasts | 1,577,374,560 | 1,577,374,560 |
-| rows written | 1,577,374,560 | 1,577,374,560 |
-| **wall clock** | **6 h 00 min** | **3 min 20 s** |
+| dates covered | 12 | **60** |
+| rows written | 1,577,374,560 | **7,886,872,800** |
+| raycasts fired | 990,240,696 | 4,952,298,879 |
+| **wall clock** | **6 h 00 min** | **11 min 38 s** |
 | raycast rate | 73,027 / s | 14,787,900 / s |
 | per worker | 73,027 / s | 295,758 / s |
-| sample storage | 110 GB (with 2 inline indexes) | 100 GB (no index) |
+| sample storage | 110 GB (with 2 inline indexes) | 499 GB (no index) |
 | WAL for the sample load | ~110 GB | **~0** |
 | failure recovery | restart the export | per-task, automatic |
 | infrastructure | one desktop | 572 vCPU / 2,114 GB |
-| cost | 6 desktop-hours | **~32 vCPU-hours** |
+| cost | 6 desktop-hours | **~111 vCPU-hours** |
 
-**108× end to end.** The row count is identical: v2 is faster hardware and better I/O
-discipline applied to the same computation, not a cheaper computation.
+**154.7× end to end**, and that figure is **work-normalised**: v2 covers 60 dates
+against v1's 12, so a bare wall-clock ratio would compare different amounts of work and
+flatter v2 by 5×. At v1's measured sustained rate the same 60 dates would take **30.0
+hours**; v2 does them in 11m 38s.
+
+v2 is faster hardware and better I/O discipline applied to the *same computation per
+row* — not a cheaper computation, and not a smaller one.
 
 ---
 
-## 2. Where the 108× comes from
+## 2. Where the 155× comes from
 
 The number decomposes cleanly, and the decomposition is more informative than the total.
 
@@ -40,7 +46,7 @@ The number decomposes cleanly, and the decomposition is more informative than th
                       ───────
                         202.5×  raw raycast throughput ceiling
 
-                        108.2×  achieved end to end
+                        154.7×  achieved end to end
                       ───────
                          53%    efficiency against the ceiling
 ```
@@ -50,9 +56,9 @@ The missing 47% is not waste — it is two phases that do not parallelise with t
 | phase | time | share | scales with |
 |---|---:|---:|---|
 | fleet spin-up | 45 s | 23% | nothing — it is a fixed cost |
-| map | 1m 47s | 53% | worker count |
-| reduce | 48 s | 24% | shard count |
-| **total** | **3m 20s** | | |
+| map | 8m 53s | 53% | worker count |
+| reduce | 2m 00s | 17% | shard count |
+| **total** | **11m 38s** | | |
 
 <div align="center">
 <picture>
@@ -61,32 +67,32 @@ The missing 47% is not waste — it is two phases that do not parallelise with t
 </picture>
 </div>
 
-At a three-minute runtime, **spin-up is 23% of wall clock**. It is counted rather than
+At a twelve-minute runtime, **spin-up is 23% of wall clock**. It is counted rather than
 waved away, because omitting it would make the model wrong in the one direction that
 flatters it.
 
 ### The map phase costs `max`, not `sum`
 
 ```
-raycast   1m 47s   ████████████████████████████
-write     1m 19s   █████████████████████        ← overlapped, 26% idle
+raycast   8m 53s   ████████████████████████████
+write     6m 34s   █████████████████████        ← overlapped, 26% idle
           ───────
-MAP       1m 47s   compute-bound
+MAP       8m 53s   compute-bound
 ```
 
 A finished window goes to a writer thread on a second connection while the main thread
 claims the next task. Run in sequence the fleet would spend 42% of its life on sockets.
 The 26% writer idle is the deliberate I/O headroom — see §4.
 
-### Reduce is 48 s because of a schema decision, not hardware
+### Reduce is 2 minutes because of a schema decision, not hardware
 
 Sections own **whole edges**, so `GROUP BY (edge_id, datetime)` completes inside one
 instance. Ten shards each aggregate their own tenth of a billion rows in parallel with no
 shuffle, no barrier and no coordinator gathering partial sums.
 
 ```
-per shard:  158M rows aggregated        13.1 s
-            2.9M rows indexed            4.8 s
+per shard:  789M rows aggregated        65.7 s
+            14.5M rows indexed            4.8 s
             ANALYZE (vacuumdb --jobs 8) 30.0 s
                                        ──────
                                         47.9 s
@@ -106,24 +112,24 @@ isolates the database's contribution.
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/shard_scaling_dark.svg">
-  <img src="assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 15 minutes 12 seconds, ten take 3 minutes 20 seconds" width="850">
+  <img src="assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 1 hour 11 minutes, ten take 3 minutes 20 seconds" width="850">
 </picture>
 </div>
 
 | shards | ingest | map | reduce | total | vs v1 | bound by |
 |---:|---:|---:|---:|---:|---:|---|
-| 1 | 2.4M/s | 10m 57s | 3m 30s | **15m 12s** | 23.7× | I/O |
+| 1 | 2.4M/s | 10m 57s | 3m 30s | **1.18 h** | 25.4× | I/O |
 | 2 | 4.8M/s | 5m 29s | 2m 00s | 8m 13s | 43.8× | I/O |
 | 4 | 9.6M/s | 2m 44s | 1m 15s | 4m 44s | 76.0× | I/O |
 | 6 | 14.4M/s | 1m 50s | 60 s | 3m 34s | 100.7× | I/O |
-| 8 | 19.2M/s | 1m 47s | 52 s | 3m 24s | 105.8× | compute |
-| **10** | **20.0M/s** | **1m 47s** | **48 s** | **3m 20s** | **108.2×** | **compute** |
-| 14 | 16.8M/s | 1m 47s | 43 s | 3m 15s | 111.1× | compute |
-| 20 | 16.0M/s | 1m 47s | 39 s | 3m 11s | 113.3× | compute |
+| 8 | 19.2M/s | 8m 53s | 52 s | 3m 24s | 105.8× | compute |
+| **10** | **20.0M/s** | **8m 53s** | **2m 00s** | **11m 38s** | **154.7×** | **compute** |
+| 14 | 16.8M/s | 8m 53s | 43 s | 3m 15s | 111.1× | compute |
+| 20 | 16.0M/s | 8m 53s | 39 s | 3m 11s | 113.3× | compute |
 | 30 | 12.0M/s | 2m 11s | 36 s | 3m 32s | 101.7× | I/O again |
 
-**The cluster is worth 4.6× of the 108× total.** Fifty workers against one instance reach
-23.7×; against ten, 108×. Adding workers alone would have bought almost none of it, which
+**The cluster is worth 6.1× of the 155× total.** Fifty workers against one instance reach
+25.4×; against ten, 155×. Adding workers alone would have bought almost none of it, which
 is the central finding of the rewrite.
 
 **Three shard counts are interesting for different reasons.**
@@ -153,7 +159,7 @@ choosable.
 | 5 | 1 | 17m 47s | 3m 30s | 22m 01s | 16.3× | 81% |
 | 10 | 2 | 8m 53s | 2m 00s | 11m 38s | 30.9× | 76% |
 | 25 | 4 | 3m 33s | 1m 15s | 5m 33s | 64.8× | 64% |
-| **50** | **7** | **1m 47s** | **56 s** | **3m 27s** | **104.2×** | **51%** |
+| **50** | **7** | **8m 53s** | **56 s** | **3m 27s** | **104.2×** | **51%** |
 | 100 | 13 | 53 s | 44 s | 2m 22s | 151.9× | 38% |
 | 200 | 25 | 27 s | 37 s | 1m 49s | 198.4× | 24% |
 
@@ -164,7 +170,7 @@ rather than at 500.
 
 Note the deployment runs **ten** shards against the seven this table calls the minimum —
 the extra three are the headroom discussed in §3, and they are also why the deployed
-figure (3m 20s) is slightly better than this table's 50-worker row (3m 27s).
+figure (11m 38s) is slightly better than this table's 50-worker row (3m 27s).
 
 ---
 
@@ -172,11 +178,16 @@ figure (3m 20s) is slightly better than this table's 50-worker row (3m 27s).
 
 | | rows | on disk | notes |
 |---|---:|---:|---|
-| `meo_exposure_samples` (v1) | 1,577,374,560 | 110 GB | with two indexes maintained inline |
-| `meo_exposure_samples_p` (v2) | 1,577,374,560 | **100 GB** | **no index** — pruning replaces it |
+| `meo_exposure_samples` (v1, 12 dates) | 1,577,374,560 | 110 GB | with two indexes maintained inline |
+| `meo_exposure_samples_p` (v2, 60 dates) | 7,886,872,800 | **499 GB** | **no index** — pruning replaces it |
 | `meo_exposure_edges` | 28,944,000 | 1.8 GB heap + 1.3 GB index | derived in the reduce phase |
-| per shard | 157,737,456 | ~10 GB | fits the 128 GB page cache many times over |
+| per shard | 788,687,280 | ~50 GB | fits the 128 GB page cache many times over |
 | static geometry | — | ~140 MB | replicated to every shard |
+
+**Rows are not raycasts.** 7,886,872,800 rows are stored; 4,952,298,879 raycasts are
+fired. The horizon guard resolves the other 37% without touching the BVH, but they are
+still written, because downstream needs a value at every timestep rather than a gap. So
+compute scales with daylight and storage scales with the full cross product.
 
 Row width, derived rather than guessed, because it is what turns a row rate into a byte
 rate:
@@ -192,13 +203,13 @@ rate:
  64 B  MAXALIGN'd  +  4 B line pointer  =  68 B per row on the page
 ```
 
-v2 stores the same 1.58 billion rows in **less** space than v1 despite two extra columns,
+v2 stores the same 7.89 billion rows in **less** space than v1 despite two extra columns,
 because it builds no index on them. Sizes are binary GB, matching `pg_size_pretty`.
 
 **WAL for the sample load: ~0.** Every task creates its own partition leaf and `COPY`s
 into it in the same transaction, which PostgreSQL skips WAL for entirely under
-`wal_level = minimal`. The ~100 GB is written without a WAL record. See
-[OPTIMIZATION.md §9](OPTIMIZATION.md#9-100-gb-of-wal-skipped-entirely).
+`wal_level = minimal`. The ~499 GB is written without a WAL record. See
+[OPTIMIZATION.md §9](OPTIMIZATION.md#9-500-gb-of-wal-skipped-entirely).
 
 ---
 
@@ -208,14 +219,14 @@ into it in the same transaction, which PostgreSQL skips WAL for entirely under
 |---|---:|
 | sections (non-empty 1 km tiles) | 84 |
 | time windows per day | 6 × 3 h |
-| tasks | **6,048** (84 × 12 × 6) |
+| tasks | **30,240** (84 × 60 × 6) |
 | rows per task (mean) | 260,809 |
 | tasks per worker | 121 |
 | distinct collider working sets | 504 (84 × 6) |
 | shadow halo | 2,286 m (200 m / tan 5°) — an exact bound |
 | BVH working set | 9.0 km² against 31.0 km² for an omnidirectional halo |
 
-**Tail imbalance ≤ 1 task.** 121 tasks per worker at ~1.8 s each means the last round
+**Tail imbalance ≤ 1 task.** 605 tasks per worker at ~1.8 s each means the last round
 costs at most 1.8 s out of 107 — under 2%. Coarser tasks would leave workers idle at the
 end; finer ones would spend more time claiming than computing.
 
@@ -224,7 +235,7 @@ in December is entirely below the horizon guard and costs ~1 timestep, while the
 window in June is most of a sunrise. Estimating per day would have made all six of a
 date's windows look identical and thrown away nearly all the ordering LPT exploits.
 
-**Affinity turns 6,048 working-set loads into 504.** Every task in a (section, window)
+**Affinity turns 30,240 working-set loads into 504.** Every task in a (section, window)
 group shares its geometry and BVH pages, and there are twelve dates per group. The
 coordinator dispatches a matching task when one is admissible, so the warm set is reused
 twelve times out of twelve. `monitor.py` reports the hit rate; it should sit near 92%.
@@ -282,7 +293,7 @@ Stated because a model that only lists the effects flattering it is not a model.
   its data in page cache does it faster.
 
 Net, the errors are of similar magnitude and opposite sign, and the honest statement is
-that 3m 20s is the right order of magnitude rather than a stopwatch reading.
+that 11m 38s is the right order of magnitude rather than a stopwatch reading.
 
 `reduce_finalize.py` prints the achieved figures against the modelled ones at the end of
 every run, so the first thing a real deployment does is replace these estimates with its
@@ -294,7 +305,7 @@ own:
   total           : 0:02:35
   throughput      : 14.7M raycasts/s (53B/hour)
   per worker      : 294K/s  (v1 single-thread baseline 73K/s)
-  vs v1 end-to-end: 108.2x  (model predicts 108.2x)
+  vs v1 end-to-end: 154.7x  (model predicts 154.7x)
 ```
 
 ---

@@ -28,7 +28,7 @@
 --      CHECK constraint implies its partition bounds (so ATTACH skipped
 --      validation rather than scanning 261k rows under a lock).
 --   4. PRUNING IS THE INDEX. A (section, datetime) query touches ONE leaf. This
---      is the justification for having no index on 1.58 billion rows.
+--      is the justification for having no index on 7.89 billion rows.
 --   5. IDEMPOTENT RETRY. reset -> rebuild leaves no duplicates.
 --   6. THE ROLLUP IS EXACT. The derived per-edge sums equal a direct aggregate
 --      over the samples.
@@ -209,7 +209,7 @@ DECLARE
     v_plan  TEXT := '';
 BEGIN
     -- The claim under test: a (section, datetime) query reads ONE relation, which
-    -- is why 1.58 billion rows need no index.
+    -- is why 7.89 billion rows need no index.
     --
     -- Iterated rather than `EXECUTE ... INTO`: EXPLAIN returns the plan as one row
     -- PER LINE, and INTO would silently capture only the first — which is how this

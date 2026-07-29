@@ -17,7 +17,7 @@ THREE PROFILES, BECAUSE THERE ARE TWO ROLES AND ONE OF THEM HAS TWO PHASES
 
 A data shard's right answer genuinely inverts between phases: during the load its
 contents are reproducible from (mesh, ephemeris, section, date, window) in about
-three minutes, so WAL is pure overhead. Once loaded, it is the input to something
+twelve minutes, so WAL is pure overhead. Once loaded, it is the input to something
 else and WAL is how you avoid regenerating it.
 
 The coordinator never gets that trade, and --role coordinator ignores --profile
@@ -364,7 +364,7 @@ def compute(ram_gb: float, cpus: int, workers: int, profile: str, role: str,
     cfg["random_page_cost"] = "1.1"
     cfg["effective_io_concurrency"] = "200"
     cfg["default_statistics_target"] = "100"
-    # 576 leaves per shard, and partition pruning is what replaces an index on the
+    # 3,024 leaves per shard, and partition pruning is what replaces an index on the
     # sample table — so it is not optional anywhere in this deployment.
     cfg["enable_partition_pruning"] = "on"
     if not bulk:

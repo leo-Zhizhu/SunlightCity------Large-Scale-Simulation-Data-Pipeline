@@ -92,7 +92,7 @@ namespace SunlightCity.Distributed
         ///
         /// The map is a few hundred rows and never changes during a run, so caching
         /// it entirely removes the coordinator from the per-task path. A worker that
-        /// resolved its shard on every task would add 6,048 round trips per fleet
+        /// resolved its shard on every task would add 30,240 round trips per fleet
         /// and make one small instance a dependency of every write.
         ///
         /// Shards in state 'draining' or 'offline' are excluded, which is what makes

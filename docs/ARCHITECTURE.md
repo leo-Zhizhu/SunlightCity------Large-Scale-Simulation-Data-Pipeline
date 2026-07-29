@@ -9,7 +9,7 @@ detail, [DB_CLUSTER.md](DB_CLUSTER.md). For the low-level work inside a worker,
 
 ## 1. The constraint everything else follows from
 
-v1 computed 1,577,374,560 raycasts in **6 hours** and wrote 110 GB. The obvious read
+v1 wrote 1,577,374,560 rows in **6 hours**, occupying 110 GB. The obvious read
 is "raycasting is slow, add machines". That read is wrong, and getting it right
 determines the whole design.
 
@@ -38,11 +38,11 @@ Those figures are what
 [`meo_edge_directional_cost()`](../distributed/db/03_shard_schema.sql) is the function
 that computes them. `sunlit_sum` is therefore a **derived convenience index** — good
 for a Pareto search's coarse objective, incapable of the directional query — and the
-1.58 billion sample rows are the product.
+7.89 billion sample rows are the product.
 
 So the row count stands, and the real problem appears:
 
-**One PostgreSQL instance cannot absorb 1.58 billion rows from 50 concurrent
+**One PostgreSQL instance cannot absorb 7.89 billion rows from 50 concurrent
 producers.** A COPY backend is one busy CPU, so a 16 vCPU instance sustains about
 twelve productive streams — ~2.4M rows/s — while a 50-worker fleet produces 14.8M
 rows/s. Six sevenths of the fleet would sit waiting.
@@ -58,22 +58,22 @@ Workers held fixed at 50; only the number of database instances varies.
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/shard_scaling_dark.svg">
-  <img src="assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 15 minutes 12 seconds, ten take 3 minutes 20 seconds" width="850">
+  <img src="assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 1 hour 11 minutes, ten take 3 minutes 20 seconds" width="850">
 </picture>
 </div>
 
 | shards | wall clock | vs v1 | bound by |
 |---:|---:|---:|---|
-| 1 | 15m 12s | 23.7× | I/O |
+| 1 | 1.18 h | 25.4× | I/O |
 | 4 | 4m 44s | 76.0× | I/O |
 | 8 | 3m 24s | 105.8× | compute |
-| **10** | **3m 20s** | **108.2×** | **compute** |
+| **10** | **11m 38s** | **154.7×** | **compute** |
 | 20 | 3m 11s | 113.3× | compute |
 | 30 | 3m 32s | 101.7× | I/O again |
 
 Three things to take from that table.
 
-**The cluster is worth 4.6× of the 108× total.** The remaining 4.05× per worker comes
+**The cluster is worth 6.1× of the 155× total.** The remaining 4.05× per worker comes
 from batched raycasts and BVH locality ([OPTIMIZATION.md](OPTIMIZATION.md)); 50 pods
 multiply it. Neither half alone gets close.
 
@@ -194,7 +194,7 @@ meo_exposure_samples_p
               └─ meo_exp_s<section>_<date>_w<n>          ONE TASK
 ```
 
-6,048 tasks, 6,048 leaves, ~261k rows and ~20 MB each. That single correspondence buys
+30,240 tasks, 30,240 leaves, ~261k rows and ~20 MB each. That single correspondence buys
 four things at once:
 
 **No extension-lock contention.** Concurrent `COPY` into one heap serialises on the
@@ -204,11 +204,11 @@ relation nobody else can see.
 
 **No WAL at all for the sample data.** `COPY` into a relation created in the **same
 transaction** skips WAL entirely under `wal_level = minimal`. Because the leaf is built
-from scratch per task rather than appended to a pre-existing partition, all ~100 GB is
+from scratch per task rather than appended to a pre-existing partition, all ~500 GB is
 written without a WAL record. Not reduced — skipped.
 
 **`COPY ... FREEZE` is legal**, for the same reason. Tuples land already frozen, so
-there is no hint-bit write on first read and no freeze-vacuum of 1.58 billion rows to
+there is no hint-bit write on first read and no freeze-vacuum of 7.89 billion rows to
 pay later.
 
 **Idempotent retry without a `DELETE`.** Replacing a task's output is
@@ -225,9 +225,9 @@ scanning 261k rows under a lock.
 
 ### No index on the sample table
 
-1.58 billion rows, no index, deliberately. Partition pruning reaches one ~261k-row leaf
+7.89 billion rows, no index, deliberately. Partition pruning reaches one ~261k-row leaf
 — verified in the self-test — and scanning that is cheaper than descending a B-tree
-over 1.58e9 entries. Not building one also saves ~60 GB and all the load-time
+over 7.89e9 entries. Not building one also saves ~300 GB and all the load-time
 maintenance. **Pruning is the index.**
 
 ---
@@ -255,9 +255,9 @@ Two more concerns share the same function, in priority order:
 
 **Affinity.** A task's rays all originate in one section during one window, so its
 geometry and BVH pages are a working set the worker already has. There are 84 × 6 = 504
-such working sets but 6,048 tasks, so dispatching a task matching the caller's current
+such working sets but 30,240 tasks, so dispatching a task matching the caller's current
 (section, window) reuses the warm set twelve times out of twelve. Without affinity the
-fleet would fault in a fresh working set 6,048 times; with it, 504. The hints are
+fleet would fault in a fresh working set 30,240 times; with it, 504. The hints are
 advisory — if nothing matches, the claim falls straight through to LPT, so affinity can
 never stall the queue or unbalance the cluster.
 
@@ -337,23 +337,23 @@ and the main loop reaps completions separately from producing them.
 | phase | time | share | |
 |---|---:|---:|---|
 | fleet spin-up | 45 s | 23% | image pull (warm) + engine boot + scene load + BVH warm |
-| **map** | **1m 47s** | **53%** | `max(raycast 1m 47s, write 1m 19s)` — compute-bound |
-| reduce | 48 s | 24% | ten shards in parallel |
-| **total** | **3m 20s** | | **108× v1** |
+| **map** | **8m 53s** | **53%** | `max(raycast 8m 53s, write 6m 34s)` — compute-bound |
+| reduce | 2m 00s | 17% | ten shards in parallel |
+| **total** | **11m 38s** | | **155× v1** |
 
 **Writing is free.** The map phase costs `max(raycast, write)`, not their sum, because
 a finished window is handed to a writer thread on a second connection while the main
 thread claims the next task. Done in sequence the fleet would spend 42% of its life on
 sockets.
 
-**Spin-up is counted, not waved away.** At a three-minute runtime it is 23% of wall
+**Spin-up is counted, not waved away.** At a twelve-minute runtime it is 23% of wall
 clock, and pretending otherwise would make the model wrong in the one direction that
 flatters it.
 
-**Reduce cannot overlap** — it needs the last row — but it is only 48 s because a
+**Reduce cannot overlap** — it needs the last row — but it is only 2 min because a
 section owns whole edges, so all ten shards roll up locally with no shuffle.
 
-Full numbers, including the honest accounting of the 108× against a 202× theoretical
+Full numbers, including the honest accounting of the 155× against a 202× theoretical
 ceiling: [PERFORMANCE.md](PERFORMANCE.md).
 
 ---

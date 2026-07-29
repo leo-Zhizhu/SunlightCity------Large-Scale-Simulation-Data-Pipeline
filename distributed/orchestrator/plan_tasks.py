@@ -64,40 +64,23 @@ from cluster import ClusterEndpoints, SectionGrid, Topology, hilbert_index
 import model
 
 
-# --- Reference dates: 1st and 15th of every month ---------------------------
-DEFAULT_DATES = [(m, d) for m in range(1, 13) for d in (1, 15)]
+# --- Reference dates --------------------------------------------------------
+#
+# v2 covers 60 dates: the 1st, 7th, 13th, 19th and 25th of every month — roughly
+# every six days, which resolves the solar declination cycle rather than sampling it
+# twelve times as v1's one-per-month run did. That is 5x v1's work and it is the
+# single reason every capacity figure is what it is.
+DEFAULT_DATE_DAYS = model.V2_DATE_DAYS
+DEFAULT_DATES = [(m, d) for m in range(1, 13) for d in DEFAULT_DATE_DAYS]
 
-# Manhattan. Used only to estimate daylight for cost ordering, so a low-precision
-# model is fine — see estimate_daylight_window().
-DEFAULT_LATITUDE = 40.7826
+# Manhattan. Only used to estimate daylight for cost ordering.
+DEFAULT_LATITUDE = model.DEFAULT_LATITUDE
 
-# Local solar noon, in minutes past local midnight. Manhattan sits ~4 deg west of
-# the 75 deg W standard meridian, so solar noon falls near 11:56 rather than 12:00.
-# Only used to place the daylight window for the cost estimate.
-SOLAR_NOON_MINUTE = 716
-
-
-# ===========================================================================
-# Daylight model
-# ===========================================================================
-def daylight_hours(d: date, latitude: float = DEFAULT_LATITUDE) -> float:
-    """
-    Approximate daylight length. Standard solar-declination model (Cooper's
-    equation for declination, then the sunrise hour angle).
-
-    Deliberately NOT the pvlib ephemeris the simulation itself uses: this only
-    needs to rank a June window above a December one, and pulling pvlib in would
-    make the orchestrator image depend on the scientific stack.
-    """
-    doy = d.timetuple().tm_yday
-    decl = math.radians(23.45) * math.sin(math.radians(360.0 * (284 + doy) / 365.0))
-    lat = math.radians(latitude)
-
-    cos_omega = -math.tan(lat) * math.tan(decl)
-    # Polar day / polar night — impossible at Manhattan's latitude, but the clamp
-    # keeps the function total for other cities.
-    cos_omega = max(-1.0, min(1.0, cos_omega))
-    return 2.0 * math.degrees(math.acos(cos_omega)) / 15.0
+# The daylight model lives in model.py and is imported rather than duplicated: the
+# planner's task costs and the capacity model's raycast count are the same
+# calculation, and two copies would be two chances to disagree about how much work a
+# December window represents.
+daylight_hours = model.daylight_hours
 
 
 def estimate_daylight_steps(d: date, lo_minute: int, hi_minute: int, step: int,
@@ -108,21 +91,15 @@ def estimate_daylight_steps(d: date, lo_minute: int, hi_minute: int, step: int,
 
     This is the whole cost estimate, and the guard is why it is not simply the step
     count: the worker skips a timestep entirely when the sun is below
-    SUN_ANGLE_THRESHOLD, so cost tracks USABLE daylight inside the window.
+    SUN_ANGLE_THRESHOLD, so COMPUTE cost tracks usable daylight inside the window.
+    Cluster-wide only ~63% of timesteps raycast at all.
 
-    The threshold is converted to minutes at 15 deg/hour, the sun's apparent rate.
-    That over-estimates the trim near the solstices (the sun climbs more slowly
-    when it rises far from due east) and under-estimates it at the equinoxes, which
-    is well inside the accuracy an ordering needs.
+    Note WRITE cost does not vary this way — every timestep produces a row whether it
+    raycast or not, because downstream needs a value at every timestep rather than a
+    gap. So this orders tasks by compute, which is correct: the map phase is
+    compute-bound.
     """
-    dm = daylight_hours(d, latitude) * 60.0
-    guard_minutes = (sun_threshold_deg / 15.0) * 60.0
-
-    sunrise = SOLAR_NOON_MINUTE - dm / 2.0 + guard_minutes
-    sunset  = SOLAR_NOON_MINUTE + dm / 2.0 - guard_minutes
-
-    overlap = max(0.0, min(hi_minute, sunset) - max(lo_minute, sunrise))
-    return int(overlap // step)
+    return model.live_steps(d, lo_minute, hi_minute, step, sun_threshold_deg, latitude)
 
 
 def parse_dates(spec: str | None, year: int) -> list[date]:
@@ -228,7 +205,8 @@ def main() -> int:
                    help="fleet size; only used to sanity-check the shard count")
     p.add_argument("--year", type=int, default=2026)
     p.add_argument("--dates", default=None,
-                   help="'M.D, M.D' list; default is 1st+15th of each month (24 dates)")
+                   help="'M.D, M.D' list; default is the 1st/7th/13th/19th/25th of "
+                        "each month (60 dates)")
     p.add_argument("--section-meters", type=float, default=model.SECTION_METERS)
     p.add_argument("--windows", type=int, default=model.TIME_WINDOWS,
                    help="time windows per day; must divide the simulation span evenly")

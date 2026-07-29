@@ -4,7 +4,7 @@
 --
 -- pg_tune.py tunes the SERVER. This file tunes the TABLES, which is where the
 -- remaining wins are: server settings are blunt, while storage parameters let the
--- append-only 100 GB of exposure leaves and the high-churn few-thousand-row work
+-- append-only 500 GB of exposure leaves and the high-churn few-thousand-row work
 -- queue be treated as the completely different workloads they are.
 --
 -- One file, two roles. It detects which instance it is on rather than making the
@@ -48,8 +48,8 @@ BEGIN
         --
         -- fillfactor = 100. The default 90 reserves a tenth of every page for
         -- future HOT updates that will never come — these leaves are written once
-        -- by COPY and then never UPDATEd or DELETEd. On 100 GB that default would
-        -- waste ~10 GB and add 10% more pages to every sequential scan, which is
+        -- by COPY and then never UPDATEd or DELETEd. On 500 GB that default would
+        -- waste ~50 GB and add 10% more pages to every sequential scan, which is
         -- the only access pattern they have.
         --
         -- autovacuum_enabled = off, and this is safe ONLY because the load uses
@@ -180,16 +180,16 @@ COMMIT;
 -- Note what is NOT here: any index on meo_exposure_samples_p.
 --
 -- 04 is the last file that runs before the fleet starts, and the sample table
--- reaches 1.58 billion rows without ever acquiring one. That is not an omission:
+-- reaches 7.89 billion rows without ever acquiring one. That is not an omission:
 --
 --   * An index maintained during the load costs a B-tree descent and possibly a
 --     page split per COPY'd row, and would turn the upper levels into a
 --     contention point.
---   * It would occupy ~60 GB, more than half the data it indexes.
+--   * It would occupy ~300 GB, more than half the data it indexes.
 --   * It would answer no question that partition pruning does not already answer
 --     better. The only lookup is "this edge's samples at this timestamp", and
 --     pruning reduces that to one ~261k-row leaf — cheaper to scan sequentially
---     than to descend a B-tree over 1.58e9 entries for.
+--     than to descend a B-tree over 7.89e9 entries for.
 --
 -- Indexes on the DERIVED edge table are built in 05, after the load, where they
 -- cost one large sequential sort instead of a billion random descents.

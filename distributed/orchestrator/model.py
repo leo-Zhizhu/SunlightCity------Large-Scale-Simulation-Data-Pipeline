@@ -19,23 +19,35 @@ known rate; one COPY stream ingests at a known rate; the cluster must match.
 Writing that as arithmetic makes the sizing auditable and lets it be re-derived
 for a different fleet size, a different city, or different hardware.
 
+    python model.py --db               # what actually ends up in the database
+
 THE ONE CONSTRAINT THAT SHAPES EVERYTHING
 -----------------------------------------
 The schema is fixed: one row per (sample point, timestamp), exactly as v1 wrote
-it. That is 1.58 billion rows, not the 29 million a per-edge sum would be. The
-downstream router traverses an edge as an ORDERED, DIRECTIONAL sequence of sample
-points — walking east through a colonnade is not the same exposure as walking
-west through it — so the per-sample series is the product, not an intermediate.
+it. At v2's 60 dates that is 7.89 billion rows, not the 145 million a per-edge sum
+would be. The downstream router traverses an edge as an ORDERED, DIRECTIONAL
+sequence of sample points — walking east through a colonnade is not the same
+exposure as walking west through it — so the per-sample series is the product, not
+an intermediate.
 
-Everything below follows from refusing to discard it: the sample rate sets the
-ingest requirement, the ingest requirement sets the shard count, and the shard
-count sets the reduce time.
+Everything below follows from refusing to discard it: the row rate sets the ingest
+requirement, the ingest requirement sets the shard count, and the shard count sets
+the reduce time.
+
+TWO NUMBERS THAT ARE EASY TO CONFLATE
+-------------------------------------
+ROWS are the full cross product of samples and timesteps. RAYCASTS are only the
+daylight timesteps — the horizon guard resolves the rest without touching the BVH.
+They differ by ~37%. Throughput is quoted in ROWS/s because that is what both the
+compute and the I/O side sustain, and it is how v1's 6 hours was measured. See the
+"ROWS ARE NOT RAYCASTS" section and `--db`.
 """
 
 from __future__ import annotations
 
 import argparse
 import math
+from datetime import date
 
 # ===========================================================================
 # SCENE — Manhattan road graph and sampling
@@ -47,20 +59,114 @@ TREES         = 1_280_954
 
 # ===========================================================================
 # SIMULATION WINDOW
+#
+# 03:00 to 21:00 at 3-minute intervals, HALF-OPEN — so 360 timesteps per day, and
+# six 3-hour windows tile the day exactly. (v1's export loop used an inclusive
+# endpoint and so ran 361 steps, double-counting 21:00; see meo_window_bounds.)
 # ===========================================================================
 START_MINUTE  = 180          # 03:00 — earliest sunrise of the year, with margin
-END_MINUTE    = 1260         # 21:00 — latest sunset of the year, with margin
+END_MINUTE    = 1260         # 21:00 — latest sunset of the year, with margin (exclusive)
 STEP_MINUTE   = 3
 STEPS_PER_DAY = (END_MINUTE - START_MINUTE) // STEP_MINUTE   # 360
-DAYS          = 12           # one representative day per month
+
+# ---- Temporal coverage: the one number that differs between the versions ----
+#
+# v1's reference run covered 12 dates — one representative day per month. v2 covers
+# 60 — five per month, roughly every six days — which resolves the solar declination
+# cycle properly instead of sampling it twelve times.
+#
+# That is FIVE TIMES the work, and it is why every figure below is what it is. It
+# also means a bare "v2 is N times faster" would compare different amounts of work
+# and flatter v2 by 5x, so every speedup here is normalised — see
+# v1_equivalent_seconds().
+V1_DAYS = 12
+DAYS    = 60
 
 # The product. Retained at full sample resolution — see the module docstring.
-EXPOSURE_ROWS = SAMPLE_POINTS * STEPS_PER_DAY * DAYS         # 1.577e9
+V1_ROWS       = SAMPLE_POINTS * STEPS_PER_DAY * V1_DAYS      # 1.577e9
+EXPOSURE_ROWS = SAMPLE_POINTS * STEPS_PER_DAY * DAYS         # 7.887e9
 
 # Derived convenience index: one row per (edge, timestamp), computed shard-locally
 # in the reduce phase. Serves "how sunlit is this edge right now" in one lookup;
 # the directional queries go to the sample rows.
-EDGE_ROWS = EDGES * STEPS_PER_DAY * DAYS                     # 2.894e7
+EDGE_ROWS = EDGES * STEPS_PER_DAY * DAYS                     # 1.447e8
+
+# ===========================================================================
+# ROWS ARE NOT RAYCASTS, and conflating them overstates the compute by ~40%
+#
+# Every (sample point, timestep) pair produces a ROW — including timesteps when the
+# sun is below the horizon guard, whose samples are all recorded as shadowed. But
+# those timesteps fire NO RAYCAST: SectionExposureSampler.AccumulateTimestep returns
+# before building the batch, and v1's ShadowEngine.IsInShadow returns true before
+# calling Physics.Raycast. The bits stay 0 and the writer emits them anyway, because
+# downstream needs a value at every timestep, not a gap.
+#
+# So there are two different quantities, and the documentation now keeps them apart:
+#
+#   ROWS       what the database must absorb and store. The full cross product.
+#   RAYCASTS   what the BVH actually traverses. Only the daylight timesteps.
+#
+# The pipeline's throughput is quoted in ROWS/s, because that is what both the
+# compute and the I/O side have to sustain end to end — and because it is the figure
+# v1's 6-hour run was measured as. The raycast count is derived below for honesty
+# about how much geometry work is really involved.
+# ===========================================================================
+DEFAULT_LATITUDE = 40.7826          # Manhattan
+SOLAR_NOON_MINUTE = 716             # ~11:56 local standard time, 4 deg west of 75W
+SUN_ANGLE_THRESHOLD = 5.0           # the horizon guard, degrees
+
+# v2's 60 dates: the 1st, 7th, 13th, 19th and 25th of every month — roughly every
+# six days, which resolves the solar declination cycle rather than sampling it 12
+# times. v1's 12 were one per month.
+V2_DATE_DAYS = (1, 7, 13, 19, 25)
+V1_DATE_DAYS = (1,)
+
+
+def daylight_hours(d: date, latitude: float = DEFAULT_LATITUDE) -> float:
+    """
+    Daylight length from the solar declination (Cooper's equation) and the sunrise
+    hour angle. Deliberately not the pvlib ephemeris the simulation itself uses:
+    this only needs to be accurate enough to count timesteps.
+    """
+    doy = d.timetuple().tm_yday
+    decl = math.radians(23.45) * math.sin(math.radians(360.0 * (284 + doy) / 365.0))
+    lat = math.radians(latitude)
+    cos_omega = max(-1.0, min(1.0, -math.tan(lat) * math.tan(decl)))
+    return 2.0 * math.degrees(math.acos(cos_omega)) / 15.0
+
+
+def live_steps(d: date, lo_minute: int = START_MINUTE, hi_minute: int = END_MINUTE,
+               step: int = STEP_MINUTE, threshold: float = SUN_ANGLE_THRESHOLD,
+               latitude: float = DEFAULT_LATITUDE) -> int:
+    """
+    Timesteps in [lo, hi) whose sun is ABOVE the horizon guard — i.e. the ones that
+    actually raycast. The guard is converted to minutes at the sun's apparent rate
+    of 15 deg/hour.
+    """
+    dm = daylight_hours(d, latitude) * 60.0
+    guard = (threshold / 15.0) * 60.0
+    sunrise = SOLAR_NOON_MINUTE - dm / 2.0 + guard
+    sunset  = SOLAR_NOON_MINUTE + dm / 2.0 - guard
+    return int(max(0.0, min(hi_minute, sunset) - max(lo_minute, sunrise)) // step)
+
+
+def dates(year: int = 2026, days=V2_DATE_DAYS) -> list[date]:
+    return [date(year, m, d) for m in range(1, 13) for d in days]
+
+
+def raycasts(days=V2_DATE_DAYS) -> int:
+    """Actual BVH traversals: samples x daylight timesteps, summed over the dates."""
+    return SAMPLE_POINTS * sum(live_steps(d) for d in dates(days=days))
+
+
+V1_RAYCASTS = raycasts(V1_DATE_DAYS)
+RAYCASTS    = raycasts(V2_DATE_DAYS)
+
+# The fraction of evaluations that touch geometry at all. The rest are the horizon
+# guard's, and they are why a December window costs a fraction of a June one — the
+# cost spread the planner's LPT ordering exploits.
+RAYCAST_FRACTION = RAYCASTS / EXPOSURE_ROWS
+
 
 # ===========================================================================
 # STORAGE
@@ -77,25 +183,38 @@ EDGE_ROWS = EDGES * STEPS_PER_DAY * DAYS                     # 2.894e7
 #   ---
 #   64 B MAXALIGN'd, + 4 B line pointer = 68 B per row on the page
 #
-# v1 measured 110 GB on disk for `meo_exposure_samples` after a full annual run,
-# with two btree indexes maintained inline. v2 stores the same 1.58 billion rows
-# in 100 GB and builds NO index on the sample table at all: partition pruning
-# down to a (section, 3 h window) leaf of ~261k rows makes one redundant, and not
-# building it removes both the load-time maintenance and the index heap.
+# v1's 12-date run occupied 110 GB measured — the 1.577e9 sample rows together with
+# the aggregated per-edge sums, and the indexes maintained on both inline.
+#
+# v2 builds NO index on the sample table at all: partition pruning down to a
+# (section, 3 h window) leaf of ~261k rows makes one redundant, and not building it
+# removes both the load-time maintenance and the index heap. The per-row cost is
+# therefore the heap width alone.
 #
 # Sizes are binary GB (GiB), matching what pg_size_pretty reports.
 # ===========================================================================
 SAMPLE_ROW_BYTES = 68
-RAW_SAMPLES_GB   = EXPOSURE_ROWS * SAMPLE_ROW_BYTES / 1024 ** 3   # ~100 GB
-EDGE_AGG_GB      = EDGE_ROWS * SAMPLE_ROW_BYTES / 1024 ** 3       # ~1.8 GB heap
+RAW_SAMPLES_GB   = EXPOSURE_ROWS * SAMPLE_ROW_BYTES / 1024 ** 3   # ~500 GB
+EDGE_AGG_GB      = EDGE_ROWS * SAMPLE_ROW_BYTES / 1024 ** 3       # ~9 GB heap
 EDGE_INDEX_GB    = EDGE_ROWS * 48 / 1024 ** 3                     # covering index
-V1_MEASURED_GB   = 110.0     # v1, same rows + 2 indexes maintained inline
+TOTAL_STORAGE_GB = RAW_SAMPLES_GB + EDGE_AGG_GB + EDGE_INDEX_GB
+
+# v1, measured: 12 dates, samples + edge aggregate + their indexes.
+V1_MEASURED_GB   = 110.0
 
 # ===========================================================================
 # V1 BASELINE — one desktop, main-thread Physics.Raycast, one PostgreSQL
+#
+# Measured: 1,577,374,560 ROWS in about 6 hours, a sustained end-to-end rate
+# (compute AND I/O together) of ~262.9 million per hour.
 # ===========================================================================
-V1_SECONDS      = 6.0 * 3600
-V1_RAYCAST_RATE = EXPOSURE_ROWS / V1_SECONDS                 # ~73k/s
+V1_SECONDS   = 6.0 * 3600
+# ROWS per second, not raycasts — see the note above. This is the end-to-end
+# pipeline rate: raycasting, guard evaluation, buffering and COPY together.
+V1_ROW_RATE  = V1_ROWS / V1_SECONDS                          # ~73k/s
+# Retained under the old name because a great deal of prose and several scripts
+# refer to it; it is the same number, more precisely described.
+V1_RAYCAST_RATE = V1_ROW_RATE
 
 # ===========================================================================
 # V2 PER-WORKER RAYCAST RATE
@@ -117,7 +236,8 @@ V1_RAYCAST_RATE = EXPOSURE_ROWS / V1_SECONDS                 # ~73k/s
 # ===========================================================================
 BATCH_SPEEDUP       = 3.0
 LOCALITY_SPEEDUP    = 1.35
-WORKER_RAYCAST_RATE = V1_RAYCAST_RATE * BATCH_SPEEDUP * LOCALITY_SPEEDUP  # ~296k/s
+WORKER_ROW_RATE = V1_ROW_RATE * BATCH_SPEEDUP * LOCALITY_SPEEDUP          # ~296k/s
+WORKER_RAYCAST_RATE = WORKER_ROW_RATE      # alias, see V1_RAYCAST_RATE above
 
 # ===========================================================================
 # DATABASE INGEST
@@ -153,7 +273,7 @@ def shard_max_streams(vcpu: int = None) -> int:
 # there is no shuffle and nothing to move. What remains:
 #   1. derive the per-edge rollup (a shard-local GROUP BY, because a section owns
 #      whole edges — never half of one)
-#   2. index the rollup (2.9M rows/shard, not 158M)
+#   2. index the rollup (14.5M rows/shard, not 789M)
 #   3. ANALYZE, run with vacuumdb --jobs so the leaf partitions go in parallel
 #
 # COPY FREEZE during the load means there is no freeze-vacuum to pay later
@@ -161,12 +281,12 @@ def shard_max_streams(vcpu: int = None) -> int:
 # ===========================================================================
 EDGE_ROLLUP_ROWS_PER_S = 12_000_000   # parallel aggregate, 8 workers, page-cache resident
 INDEX_BUILD_ROWS_PER_S = 600_000      # B-tree, 8 parallel maint. workers, 16 GB maintenance_work_mem
-ANALYZE_SECONDS        = 30           # 576 leaves per shard via vacuumdb --analyze --jobs 8
+ANALYZE_SECONDS        = 30           # 3,024 leaves per shard via vacuumdb --analyze --jobs 8
 
 # ===========================================================================
 # FLEET SPIN-UP
 #
-# Counted, not waved away, because at a 3-minute runtime it is 23% of wall clock.
+# Counted, not waved away, because at a 12-minute runtime it is 23% of wall clock.
 # Warm image cache + engine boot + scene load + whole-city BVH warm.
 # ===========================================================================
 FLEET_STARTUP_SECONDS = 45
@@ -297,6 +417,25 @@ def total_seconds(workers: int = WORKERS, shards: int = SHARDS) -> float:
     return FLEET_STARTUP_SECONDS + map_seconds(workers, shards) + reduce_seconds(shards)
 
 
+def v1_equivalent_seconds(rows: float = None) -> float:
+    """
+    What v1 would take for the SAME work, at its measured sustained rate.
+
+    v2 covers 60 dates against v1's 12, so a bare wall-clock ratio would compare
+    different amounts of work and flatter v2 by 5x. Every speedup figure in this
+    module and in the documentation is against this number instead.
+
+    It comes out at exactly 30.0 h, which is the arithmetic being explicit rather
+    than a coincidence: v2's row count is 5x v1's, and v1 took 6 h.
+    """
+    return (EXPOSURE_ROWS if rows is None else rows) / V1_RAYCAST_RATE
+
+
+def speedup(workers: int = WORKERS, shards: int = SHARDS) -> float:
+    """End-to-end, work-normalised."""
+    return v1_equivalent_seconds() / total_seconds(workers, shards)
+
+
 def balanced_shards(workers: int = WORKERS) -> int:
     """
     Smallest shard count whose aggregate ingest keeps up with the fleet's raycast
@@ -341,26 +480,38 @@ def report() -> None:
     print(f"    sample points            {SAMPLE_POINTS:>15,}   @ 2 m spacing")
     print(f"    edges / waypoints        {EDGES:>15,} / {WAYPOINTS:,}")
     print(f"    street trees             {TREES:>15,}")
-    print(f"    sample-level rows        {EXPOSURE_ROWS:>15,}")
-    print(f"                             {SAMPLE_POINTS:,} pts x {STEPS_PER_DAY} steps x {DAYS} days")
+    print(f"    timesteps per day        {STEPS_PER_DAY:>15,}   "
+          f"{START_MINUTE // 60:02d}:00-{END_MINUTE // 60:02d}:00 every {STEP_MINUTE} min")
+
+    print("\n  V1 — 12 dates, one desktop, one PostgreSQL")
+    print(f"    sample-level rows        {V1_ROWS:>15,}   "
+          f"{SAMPLE_POINTS:,} x {STEPS_PER_DAY} x {V1_DAYS}")
+    print(f"    wall clock               {fmt(V1_SECONDS):>15}   measured")
+    print(f"    sustained rate           {V1_RAYCAST_RATE / 1000:>12.1f}k/s  "
+          f"= {V1_RAYCAST_RATE * 3600 / 1e6:.1f}M/hour, compute AND I/O")
+    print(f"    storage                  {V1_MEASURED_GB:>12.1f} GB   "
+          f"samples + edge sums + indexes")
+
+    print(f"\n  V2 — {DAYS} dates, {DAYS // V1_DAYS}x the temporal coverage")
+    print(f"    sample-level rows        {EXPOSURE_ROWS:>15,}   "
+          f"{SAMPLE_POINTS:,} x {STEPS_PER_DAY} x {DAYS}")
     print(f"    derived edge rows        {EDGE_ROWS:>15,}")
     print(f"    sample-level storage     {RAW_SAMPLES_GB:>12.1f} GB   "
           f"{SAMPLE_ROW_BYTES} B/row, no index")
-    print(f"    derived edge index       {EDGE_AGG_GB:>12.2f} GB")
-    print(f"    v1 stored the same in    {V1_MEASURED_GB:>12.1f} GB   with 2 inline indexes")
-
-    print("\n  V1 — single node, single PostgreSQL")
-    print(f"    wall clock               {fmt(V1_SECONDS):>15}")
-    print(f"    raycast rate             {V1_RAYCAST_RATE / 1000:>12.1f}k/s  main thread, serial")
+    print(f"    derived edge index       {EDGE_AGG_GB:>12.2f} GB heap "
+          f"+ {EDGE_INDEX_GB:.2f} GB index")
+    print(f"    total                    {TOTAL_STORAGE_GB:>12.1f} GB")
+    print(f"    v1 would need            {fmt(v1_equivalent_seconds()):>15}   "
+          f"for the same {DAYS} dates, at its measured rate")
 
     tr, tw, tm, td = (raycast_seconds(), write_seconds(),
                       map_seconds(), reduce_seconds())
     T = total_seconds()
 
-    print(f"\n  V2 — {WORKERS} workers, {SHARDS} data shards + 1 coordinator")
+    print(f"\n  V2 TIMING — {WORKERS} workers, {SHARDS} data shards + 1 coordinator")
     print(f"    per-worker rate          {WORKER_RAYCAST_RATE / 1000:>12.1f}k/s  "
           f"{BATCH_SPEEDUP}x batching x {LOCALITY_SPEEDUP}x locality")
-    print(f"    fleet raycast rate       {WORKERS * WORKER_RAYCAST_RATE / 1e6:>12.2f}M/s")
+    print(f"    fleet row rate           {WORKERS * WORKER_ROW_RATE / 1e6:>12.2f}M/s   what the cluster must absorb")
     print(f"    cluster ingest rate      {cluster_ingest_rate() / 1e6:>12.2f}M/s  "
           f"{SHARDS} shards x {streams_per_shard()} streams x "
           f"{COPY_ROWS_PER_STREAM // 1000}k")
@@ -373,10 +524,10 @@ def report() -> None:
     print(f"\n    TOTAL                    {fmt(T):>15}")
 
     ceiling = WORKERS * BATCH_SPEEDUP * LOCALITY_SPEEDUP
-    print(f"    end-to-end speedup       {V1_SECONDS / T:>12.1f}x")
-    print(f"    raw raycast ceiling      {ceiling:>12.1f}x  "
+    print(f"    end-to-end speedup       {speedup():>12.1f}x   vs {fmt(v1_equivalent_seconds())} of v1 for the SAME 60 dates")
+    print(f"    raw throughput ceiling   {ceiling:>12.1f}x  "
           f"{WORKERS} pods x {BATCH_SPEEDUP * LOCALITY_SPEEDUP:.2f}x per pod")
-    print(f"    efficiency vs ceiling    {100 * (V1_SECONDS / T) / ceiling:>11.0f}%  "
+    print(f"    efficiency vs ceiling    {100 * speedup() / ceiling:>11.0f}%  "
           f"the gap is spin-up + reduce")
     print(f"    spin-up / map / reduce   "
           f"{100 * FLEET_STARTUP_SECONDS / T:.0f}% / {100 * tm / T:.0f}% / {100 * td / T:.0f}%")
@@ -392,14 +543,16 @@ def report() -> None:
     print(f"    rows per shard           {EXPOSURE_ROWS / SHARDS:>15,.0f}")
     print(f"    bytes per shard          {RAW_SAMPLES_GB / SHARDS:>12.1f} GB   "
           f"fits the {SHARD_GB} GB page cache")
+    print(f"    leaves per shard         {tasks() // SHARDS:>15,}   "
+          f"~{RAW_SAMPLES_GB * 1024 / tasks():.0f} MB each")
 
     # The single most important number in this file: what the cluster is worth.
     # Same 50 workers, same code, one database instead of ten.
     t1 = total_seconds(WORKERS, 1)
     print(f"\n    the same {WORKERS} workers on ONE instance: {fmt(t1)} "
-          f"({V1_SECONDS / t1:.1f}x) — {bound_by(WORKERS, 1)}")
+          f"({v1_equivalent_seconds() / t1:.1f}x) — {bound_by(WORKERS, 1)}")
     print(f"    the DB cluster is worth   {t1 / T:>12.1f}x  "
-          f"of the {V1_SECONDS / T:.0f}x total")
+          f"of the {speedup():.0f}x total")
 
     print("\n  SECTIONING")
     h = halo_meters()
@@ -437,7 +590,105 @@ def report() -> None:
           f"= {tot_cpu:>4} vCPU / {tot_mem:>5} GB")
     print(f"    storage        {SHARDS:>3} x {RAW_SAMPLES_GB / SHARDS:>5.1f} GB data"
           f"  = {RAW_SAMPLES_GB:>4.0f} GB + index/WAL headroom")
-    print(f"    cost           {tot_cpu * T / 3600:>6.1f} vCPU-hours for the annual run")
+    print(f"    cost           {tot_cpu * T / 3600:>6.1f} vCPU-hours for the {DAYS}-date run")
+    print(bar)
+
+
+def inventory() -> None:
+    """
+    Exactly what ends up in the database, table by table.
+
+    Written because "N billion rows in the database" is not a precise statement
+    about this system. The sample table is the largest object but it is not the only
+    one, it is not on one instance, and its row count is not the raycast count.
+    """
+    bar = "=" * 74
+    print(bar)
+    print(f"  Database inventory — {SHARDS} data shards + 1 coordinator, {DAYS} dates")
+    print(bar)
+
+    geom = [
+        ("meo_waypoints",      WAYPOINTS,     "graph nodes"),
+        ("meo_edges",          EDGES,         "streets"),
+        ("meo_sample_points",  SAMPLE_POINTS, "2 m spacing, ORDERED per edge"),
+        ("meo_edge_sections",  EDGES,         "edge -> owning section"),
+        ("meo_trees",          TREES,         "canopies; coordinator only by default"),
+    ]
+    ctrl = [
+        ("meo_tasks",     tasks(),        "one per (section, date, window)"),
+        ("meo_sections",  SECTIONS,       "+ Hilbert index + shard assignment"),
+        ("meo_shards",    SHARDS,         "registry: host, port, dbname, state"),
+        ("meo_runs",      1,              "frozen config the fleet must agree on"),
+        ("meo_grid",      1,              "the pinned section-id contract"),
+    ]
+
+    print("\n  COORDINATOR  (sunlit_coord)  — control plane + authoritative geometry")
+    print(f"    {'table':<26}{'rows':>14}   note")
+    print("    " + "-" * 68)
+    coord_rows = 0
+    for name, n, note in ctrl + geom:
+        coord_rows += n
+        print(f"    {name:<26}{n:>14,}   {note}")
+    print(f"    {'TOTAL':<26}{coord_rows:>14,}   ~200 MB, dominated by trees + GiST indexes")
+
+    per_shard_samples = EXPOSURE_ROWS // SHARDS
+    per_shard_edges   = EDGE_ROWS // SHARDS
+    per_shard_geom    = sum(n for name, n, _ in geom if name != "meo_trees")
+    per_shard_rows    = per_shard_samples + per_shard_edges + per_shard_geom
+
+    print(f"\n  EACH DATA SHARD  (sunlit_shard_0 .. {SHARDS - 1})")
+    print(f"    {'table':<26}{'rows':>14}{'size':>10}   note")
+    print("    " + "-" * 78)
+    print(f"    {'meo_exposure_samples_p':<26}{per_shard_samples:>14,}"
+          f"{RAW_SAMPLES_GB / SHARDS:>8.1f} GB   {tasks() // SHARDS:,} leaves, NO INDEX")
+    print(f"    {'meo_exposure_edges_p':<26}{per_shard_edges:>14,}"
+          f"{(EDGE_AGG_GB + EDGE_INDEX_GB) / SHARDS:>8.2f} GB   12 monthly partitions, derived")
+    print(f"    {'static geometry (x4)':<26}{per_shard_geom:>14,}{0.14:>8.2f} GB   "
+          f"full replica, read-only")
+    print(f"    {'TOTAL per shard':<26}{per_shard_rows:>14,}"
+          f"{TOTAL_STORAGE_GB / SHARDS + 0.14:>8.1f} GB")
+
+    cluster_rows = EXPOSURE_ROWS + EDGE_ROWS + SHARDS * per_shard_geom + coord_rows
+    print("\n  CLUSTER TOTAL")
+    print(f"    sample-level rows        {EXPOSURE_ROWS:>16,}   "
+          f"{100 * EXPOSURE_ROWS / cluster_rows:.1f}% of all rows")
+    print(f"    derived edge rows        {EDGE_ROWS:>16,}")
+    print(f"    geometry (replicated)    {SHARDS * per_shard_geom:>16,}   "
+          f"{per_shard_geom:,} x {SHARDS} shards")
+    print(f"    control plane            {coord_rows:>16,}")
+    print(f"    {'ALL ROWS':<24} {cluster_rows:>16,}")
+    print(f"    {'ALL STORAGE':<24} {TOTAL_STORAGE_GB + SHARDS * 0.14:>13.1f} GB")
+
+    print("\n  WHAT ONE ROW IS")
+    print("    meo_exposure_samples is FULLY NORMALISED — long and narrow, not wide:")
+    print("        (sample_point_id UUID, datetime TIMESTAMP, is_sunlit BOOLEAN)")
+    print("    One row = ONE (sample point, timestep) observation carrying ONE BIT.")
+    print("    So the row count IS the observation count, by construction — there is no")
+    print("    array, no per-timestep column, nothing packed. That is why 365,133 x 360 x")
+    print(f"    {DAYS} evaluations and {EXPOSURE_ROWS:,} rows are the same number.")
+    print()
+    print(f"    The cost of that encoding: {SAMPLE_ROW_BYTES} B on the page to carry 1 bit "
+          f"of payload,")
+    print(f"    = {100 / (SAMPLE_ROW_BYTES * 8):.2f}% payload efficiency.")
+    arr_rows = SAMPLE_POINTS * DAYS
+    arr_gb = arr_rows * 100 / 1024 ** 3
+    print(f"    A packed alternative — one row per (sample point, date) holding a")
+    print(f"    {STEPS_PER_DAY}-bit bitmap — would be {arr_rows:,} rows and {arr_gb:.1f} GB,")
+    print(f"    {RAW_SAMPLES_GB / arr_gb:.0f}x smaller, and would fit on ONE instance.")
+    print("    It is not used because the v1 column set is a hard requirement and every")
+    print("    v1 consumer selects those three columns. The compatibility VIEWS mean a")
+    print("    packed encoding could be introduced underneath them later without breaking")
+    print("    any consumer — see docs/DB_CLUSTER.md.")
+
+    print("\n  ROWS vs RAYCASTS — not the same number")
+    print(f"    rows written             {EXPOSURE_ROWS:>16,}   every (sample, timestep)")
+    print(f"    raycasts fired           {RAYCASTS:>16,}   "
+          f"{100 * RAYCAST_FRACTION:.1f}% — only daylight timesteps")
+    print(f"    resolved by the guard    {EXPOSURE_ROWS - RAYCASTS:>16,}   "
+          f"recorded shadowed without touching the BVH")
+    print(f"    live steps per date      "
+          f"{min(live_steps(d) for d in dates()):>7}..{max(live_steps(d) for d in dates()):<8}"
+          f"of {STEPS_PER_DAY}   winter .. summer")
     print(bar)
 
 
@@ -450,7 +701,7 @@ def sweep() -> None:
         mark = "  <-- deployed" if s == SHARDS else ""
         print(f"{s:>7} {cluster_ingest_rate(s) / 1e6:>9.1f}M/s "
               f"{fmt(map_seconds(shards=s)):>10} {fmt(reduce_seconds(s)):>10} "
-              f"{fmt(tot):>10} {V1_SECONDS / tot:>8.1f}x  {bound_by(shards=s)}{mark}")
+              f"{fmt(tot):>10} {v1_equivalent_seconds() / tot:>8.1f}x  {bound_by(shards=s)}{mark}")
     print("\n  Below the minimum the fleet waits on the database. Above it the extra")
     print("  shards only shorten the reduce phase, at linear cost — 20 shards buys")
     print(f"  {total_seconds(shards=SHARDS) - total_seconds(shards=20):.0f} s "
@@ -470,7 +721,7 @@ def worker_sweep() -> None:
         tot = total_seconds(w, s)
         mark = "  <-- fleet deployed" if w == WORKERS else ""
         print(f"{w:>8} {s:>7} {fmt(map_seconds(w, s)):>10} {fmt(reduce_seconds(s)):>10} "
-              f"{fmt(tot):>10} {V1_SECONDS / tot:>8.1f}x  {bound_by(w, s)}{mark}")
+              f"{fmt(tot):>10} {v1_equivalent_seconds() / tot:>8.1f}x  {bound_by(w, s)}{mark}")
     print(f"\n  'min sh' is the MINIMUM shard count for that fleet; the deployment runs")
     print(f"  {SHARDS} rather than {balanced_shards()} so a vacuum, a checkpoint or a slow")
     print("  instance cannot make the fleet wait. Scaling workers without scaling the")
@@ -483,6 +734,8 @@ def main() -> int:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--balance", action="store_true",
                    help="print the minimum viable shard count only")
+    p.add_argument("--db", action="store_true",
+                   help="what ends up in the database, table by table")
     p.add_argument("--sweep", action="store_true", help="shard-count sensitivity table")
     p.add_argument("--workers-sweep", action="store_true", help="fleet-size sensitivity table")
     p.add_argument("--workers", type=int, default=WORKERS)
@@ -490,6 +743,8 @@ def main() -> int:
 
     if a.balance:
         print(balanced_shards(a.workers))
+    elif a.db:
+        inventory()
     elif a.sweep:
         sweep()
     elif a.workers_sweep:
