@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="480" viewBox="0 0 880 480" role="img" aria-label="The four stress conditions for the cheapest deadline-meeting shape and for the deployed shape. The cheapest fails three of four.">
+<rect width="880" height="480" fill="#1a1a19"/>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">Why the deployed shape costs more than the deadline requires</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Same deadline, four conditions. Meeting it on paper is not the same as meeting it.</text>
+<text x="840.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MODELLED</text>
+<text x="40.0" y="96.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="12.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">40 workers / 6 shards</text>
+<text x="40.0" y="112.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">428 vCPU · cheapest that meets the deadline</text>
+<rect x="300.0" y="117.0" width="381.6" height="18.0" rx="3" fill="#5598e7" opacity="0.88"/>
+<text x="288.0" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">every rate as benchmarked</text>
+<text x="689.6" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">14m 51s</text>
+<rect x="300.0" y="142.0" width="448.9" height="18.0" rx="3" fill="#e66767" opacity="1.0"/>
+<text x="288.0" y="155.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">every rate 15% below bench</text>
+<text x="756.9" y="155.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">17m 29s</text>
+<text x="800.9" y="155.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">OVER</text>
+<rect x="300.0" y="167.0" width="426.1" height="18.0" rx="3" fill="#e66767" opacity="1.0"/>
+<text x="288.0" y="180.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">one shard + 10% of the fleet lost</text>
+<text x="734.1" y="180.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">16m 35s</text>
+<text x="778.1" y="180.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">OVER</text>
+<rect x="300.0" y="192.0" width="488.0" height="18.0" rx="3" fill="#e66767" opacity="1.0"/>
+<text x="288.0" y="205.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">both at once</text>
+<text x="796.0" y="205.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">19m 31s</text>
+<text x="840.0" y="205.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">OVER</text>
+<text x="40.0" y="252.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="12.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">54 workers / 9 shards</text>
+<text x="40.0" y="268.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">588 vCPU · deployed</text>
+<rect x="300.0" y="273.0" width="286.2" height="18.0" rx="3" fill="#5598e7" opacity="0.88"/>
+<text x="288.0" y="286.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">every rate as benchmarked</text>
+<text x="594.2" y="286.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">11m 09s</text>
+<rect x="300.0" y="298.0" width="336.7" height="18.0" rx="3" fill="#5598e7" opacity="0.88"/>
+<text x="288.0" y="311.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">every rate 15% below bench</text>
+<text x="644.7" y="311.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">13m 07s</text>
+<rect x="300.0" y="323.0" width="318.0" height="18.0" rx="3" fill="#5598e7" opacity="0.88"/>
+<text x="288.0" y="336.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">one shard + 10% of the fleet lost</text>
+<text x="626.0" y="336.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">12m 23s</text>
+<rect x="300.0" y="348.0" width="374.1" height="18.0" rx="3" fill="#5598e7" opacity="0.88"/>
+<text x="288.0" y="361.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">both at once</text>
+<text x="682.1" y="361.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">14m 34s</text>
+<line x1="685.3" y1="118.0" x2="685.3" y2="370.0" stroke="#f0803c" stroke-width="2" stroke-linecap="butt" stroke-dasharray="5 3"/>
+<text x="685.3" y="112.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#f0803c" text-anchor="middle" style="font-variant-numeric:tabular-nums">15 min</text>
+<text x="300.0" y="378.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">0m</text>
+<text x="428.4" y="378.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">5m</text>
+<text x="556.8" y="378.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">10m</text>
+<text x="685.3" y="378.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">15m</text>
+<rect x="40.0" y="389.0" width="800.0" height="73.0" rx="6" fill="#242422"/>
+<text x="56.0" y="414.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">The pessimistic row is not a failure scenario — it is the possibility that the benchmarks are simply optimistic, which does not clear up.</text>
+<text x="56.0" y="429.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Failures happen in that world too, so the bottom row is the one an SLO actually has to survive. 160 extra vCPU (37%) buys the difference</text>
+<text x="56.0" y="444.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">between passing one condition and passing all four.</text>
+</svg>

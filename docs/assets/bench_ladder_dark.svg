@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="450" viewBox="0 0 880 450" role="img" aria-label="How the per-worker and per-shard rates are built from individual benchmarks, and the headroom between the fleet's output and the cluster's ingest capacity.">
+<rect width="880" height="450" fill="#1a1a19"/>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">The two rates the sizing turns on, and where they came from</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Two chains that have to meet: sizing is making the lower one exceed the upper one. (B6-B9 are reduce-phase rates, not on this axis.)</text>
+<text x="840.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MEASURED</text>
+<text x="40.0" y="96.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">THE FLEET PRODUCES</text>
+<rect x="210.0" y="108.0" width="25.4" height="16.0" rx="3" fill="#5598e7" opacity="0.45"/>
+<text x="198.0" y="120.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">v1, one thread, end to end</text>
+<text x="44.0" y="120.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">B1</text>
+<text x="243.4" y="120.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">73k</text>
+<text x="291.4" y="120.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">measured on v1's own run</text>
+<rect x="210.0" y="131.0" width="43.9" height="16.0" rx="3" fill="#5598e7" opacity="0.45"/>
+<text x="198.0" y="143.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">x 3.0 batched raycasts</text>
+<text x="44.0" y="143.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">B2</text>
+<text x="261.9" y="143.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">219k</text>
+<text x="309.9" y="143.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">RaycastCommand.ScheduleBatch</text>
+<rect x="210.0" y="154.0" width="51.1" height="16.0" rx="3" fill="#5598e7" opacity="0.45"/>
+<text x="198.0" y="166.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">x 1.35 section-local BVH</text>
+<text x="44.0" y="166.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">B3</text>
+<text x="269.1" y="166.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">296k</text>
+<text x="317.1" y="166.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">one worker: 296k rows/s</text>
+<rect x="210.0" y="177.0" width="375.2" height="16.0" rx="3" fill="#5598e7" opacity="1.0"/>
+<text x="198.0" y="189.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="end" style="font-variant-numeric:tabular-nums">x 54 workers</text>
+<text x="593.2" y="189.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">15.97M</text>
+<text x="641.2" y="189.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the fleet: 15.97M rows/s</text>
+<text x="40.0" y="224.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">THE CLUSTER ABSORBS</text>
+<rect x="210.0" y="236.0" width="42.0" height="16.0" rx="3" fill="#f0803c" opacity="0.45"/>
+<text x="198.0" y="248.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">one binary COPY stream</text>
+<text x="44.0" y="248.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">B4</text>
+<text x="260.0" y="248.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">200k</text>
+<text x="308.0" y="248.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">into a WAL-skipped relation</text>
+<rect x="210.0" y="259.0" width="145.5" height="16.0" rx="3" fill="#f0803c" opacity="0.45"/>
+<text x="198.0" y="271.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="400" fill="#c3c2b7" text-anchor="end" style="font-variant-numeric:tabular-nums">x 12 streams per instance</text>
+<text x="44.0" y="271.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">B5</text>
+<text x="363.5" y="271.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">2.40M</text>
+<text x="411.5" y="271.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">one shard: 2.4M rows/s on 16 vCPU</text>
+<rect x="210.0" y="282.0" width="436.4" height="16.0" rx="3" fill="#f0803c" opacity="1.0"/>
+<text x="198.0" y="294.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="end" style="font-variant-numeric:tabular-nums">x 9 shards</text>
+<text x="654.4" y="294.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">21.60M</text>
+<text x="702.4" y="294.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the cluster: 21.6M rows/s</text>
+<line x1="585.2" y1="215.0" x2="585.2" y2="333.0" stroke="#5598e7" stroke-width="1.2" stroke-linecap="butt" stroke-dasharray="3 3"/>
+<line x1="646.4" y1="271.0" x2="646.4" y2="333.0" stroke="#f0803c" stroke-width="1.2" stroke-linecap="butt" stroke-dasharray="3 3"/>
+<line x1="585.2" y1="333.0" x2="646.4" y2="333.0" stroke="#0ca30c" stroke-width="2" stroke-linecap="butt"/>
+<line x1="585.2" y1="329.0" x2="585.2" y2="337.0" stroke="#0ca30c" stroke-width="2" stroke-linecap="butt"/>
+<line x1="646.4" y1="329.0" x2="646.4" y2="337.0" stroke="#0ca30c" stroke-width="2" stroke-linecap="butt"/>
+<text x="656.4" y="337.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#0ca30c" text-anchor="start" style="font-variant-numeric:tabular-nums">+35% headroom</text>
+<rect x="40.0" y="359.0" width="800.0" height="73.0" rx="6" fill="#242422"/>
+<text x="56.0" y="384.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">One shard sustains 8.11 workers' output, so at 2 COPY streams each it feeds 6. That single ratio is where W = 6S comes from, and with it</text>
+<text x="56.0" y="399.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the whole deployment shape: 9 shards x 6 = 54 workers, every instance saturated and none contended. The horizontal axis is sqrt-scaled to</text>
+<text x="56.0" y="414.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">hold 73k and 21.6M at once. python model.py --bench prints each method.</text>
+</svg>

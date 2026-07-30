@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="860" height="400" viewBox="0 0 860 400" role="img" aria-label="Wall clock against database shard count at a fixed 50 workers. One instance takes 1.2 h; ten take 11m 38s. Below eight shards the fleet is I/O-bound and waiting on the database.">
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="400" viewBox="0 0 860 400" role="img" aria-label="Wall clock against database shard count at a fixed 54 workers. One instance takes 1.2 h; ten take 11m 09s. Below eight shards the fleet is I/O-bound and waiting on the database.">
 <rect width="860" height="400" fill="#fcfcfb"/>
 <text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">The bottleneck was never the raycasting</text>
-<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Same 50 workers, same code. Only the number of PostgreSQL instances changes.</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Same 54 workers, same code. Only the number of PostgreSQL instances changes.</text>
 <text x="820.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MODELLED</text>
 <line x1="78.0" y1="304.0" x2="690.0" y2="304.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/>
 <text x="68.0" y="308.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">0m</text>
@@ -64,22 +64,22 @@
 <rect x="78.0" y="88.0" width="193.3" height="216.0" rx="0" fill="#d03b3b" opacity="0.07"/>
 <text x="174.6" y="243.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#d03b3b" text-anchor="middle" style="font-variant-numeric:tabular-nums">I/O-bound</text>
 <text x="174.6" y="258.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">fleet waits on the DB</text>
-<path d="M 78.0 100.2 L 110.2 200.3 L 142.4 233.7 L 174.6 250.4 L 206.8 260.4 L 239.1 267.0 L 271.3 268.8 L 303.5 269.5 L 335.7 270.1 L 367.9 270.6 L 400.1 271.0 L 432.3 271.3 L 464.5 271.6 L 496.7 271.8 L 528.9 272.0 L 561.2 272.2 L 593.4 270.1 L 625.6 271.8 L 657.8 272.6 L 690.0 272.7" fill="none" stroke="#256abf" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 78.0 100.2 L 110.2 200.3 L 142.4 233.7 L 174.6 250.4 L 206.8 260.4 L 239.1 267.0 L 271.3 270.6 L 303.5 271.4 L 335.7 272.0 L 367.9 272.5 L 400.1 272.9 L 432.3 273.2 L 464.5 273.5 L 496.7 273.7 L 528.9 273.9 L 561.2 274.1 L 593.4 274.3 L 625.6 274.4 L 657.8 273.3 L 690.0 274.6" fill="none" stroke="#256abf" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
 <circle cx="78.0" cy="100.2" r="5" fill="#898781" stroke="#fcfcfb" stroke-width="2"/>
 <text x="90.0" y="94.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">1 shard — 1.2 h</text>
 <text x="90.0" y="108.2" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">5x vs v1</text>
-<circle cx="367.9" cy="270.6" r="5" fill="#256abf" stroke="#fcfcfb" stroke-width="2"/>
-<text x="379.9" y="264.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">10 shards — 11m 38s</text>
-<text x="379.9" y="278.6" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">31x vs v1</text>
-<line x1="367.9" y1="88.0" x2="367.9" y2="304.0" stroke="#c2410c" stroke-width="1.5" stroke-linecap="butt" stroke-dasharray="4 3"/>
-<text x="367.9" y="82.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#c2410c" text-anchor="middle" style="font-variant-numeric:tabular-nums">deployed</text>
+<circle cx="335.7" cy="272.0" r="5" fill="#256abf" stroke="#fcfcfb" stroke-width="2"/>
+<text x="347.7" y="266.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">9 shards — 11m 09s</text>
+<text x="347.7" y="280.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">32x vs v1</text>
+<line x1="335.7" y1="88.0" x2="335.7" y2="304.0" stroke="#c2410c" stroke-width="1.5" stroke-linecap="butt" stroke-dasharray="4 3"/>
+<text x="335.7" y="82.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#c2410c" text-anchor="middle" style="font-variant-numeric:tabular-nums">deployed</text>
 <rect x="712.0" y="88.0" width="128.0" height="96.0" rx="6" fill="#f4f4f1"/>
-<text x="724.0" y="110.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#256abf" text-anchor="start" style="font-variant-numeric:tabular-nums">6.1x</text>
+<text x="724.0" y="110.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#256abf" text-anchor="start" style="font-variant-numeric:tabular-nums">6.4x</text>
 <text x="724.0" y="128.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">from the cluster</text>
-<text x="724.0" y="148.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">of the 31x total</text>
+<text x="724.0" y="148.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">of the 32x total</text>
 <text x="724.0" y="164.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the other 4.1x</text>
 <text x="724.0" y="176.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">is per-worker</text>
 <rect x="40.0" y="326.0" width="780.0" height="56.0" rx="6" fill="#f4f4f1"/>
-<text x="56.0" y="346.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">One instance absorbs ~2.4M rows/s (12 COPY streams on 16 vCPU, one busy CPU each). The fleet produces 14.8M/s.</text>
-<text x="56.0" y="364.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">So the cluster needs at least 7. Ten are deployed — +35% headroom, so a checkpoint or a vacuum on one instance cannot stall the fleet.</text>
+<text x="56.0" y="346.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">One instance absorbs ~2.4M rows/s (12 COPY streams on 16 vCPU, one busy CPU each). The fleet produces 16.0M/s.</text>
+<text x="56.0" y="364.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">So the cluster needs at least 7 to keep up at all. 9 are deployed — +35% headroom, so a checkpoint, a vacuum, or losing an instance outright cannot stall the fleet.</text>
 </svg>

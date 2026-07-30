@@ -1,30 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="860" height="330" viewBox="0 0 860 330" role="img" aria-label="Breakdown of the 11m 38s run: 45 s fleet spin-up, 8m 53s map phase in which writing overlaps raycasting entirely, and 1m 60s of reduce across ten shards in parallel.">
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="330" viewBox="0 0 860 330" role="img" aria-label="Breakdown of the 11m 09s run: 45 s fleet spin-up, 8m 14s map phase in which writing overlaps raycasting entirely, and 2m 10s of reduce across ten shards in parallel.">
 <rect width="860" height="330" fill="#fcfcfb"/>
-<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">Where the 11m 38s goes</text>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">Where the 11m 09s goes</text>
 <text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Writing is free — it happens while the next window is being raycast, on a second connection.</text>
 <text x="820.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MODELLED</text>
-<rect x="40.0" y="96.0" width="50.3" height="42.0" rx="4" fill="#898781"/>
-<text x="65.1" y="116.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">spin-up</text>
-<text x="65.1" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">45 s</text>
-<text x="65.1" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">6%</text>
-<rect x="90.3" y="96.0" width="595.8" height="42.0" rx="4" fill="#256abf"/>
-<text x="388.2" y="116.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">MAP</text>
-<text x="388.2" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">8m 53s</text>
-<text x="388.2" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">76%</text>
-<rect x="686.1" y="96.0" width="133.9" height="42.0" rx="4" fill="#9ec5f4"/>
-<text x="753.1" y="116.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">REDUCE</text>
-<text x="753.1" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">1m 60s</text>
-<text x="753.1" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">17%</text>
+<rect x="40.0" y="96.0" width="52.5" height="42.0" rx="4" fill="#898781"/>
+<text x="66.2" y="116.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">spin-up</text>
+<text x="66.2" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">45 s</text>
+<text x="66.2" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">7%</text>
+<rect x="92.5" y="96.0" width="576.1" height="42.0" rx="4" fill="#256abf"/>
+<text x="380.5" y="116.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">MAP</text>
+<text x="380.5" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">8m 14s</text>
+<text x="380.5" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">74%</text>
+<rect x="668.6" y="96.0" width="151.4" height="42.0" rx="4" fill="#9ec5f4"/>
+<text x="744.3" y="116.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="700" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">REDUCE</text>
+<text x="744.3" y="130.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">2m 10s</text>
+<text x="744.3" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">19%</text>
 <text x="40.0" y="168.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">inside the MAP phase — the two run concurrently:</text>
-<rect x="90.3" y="184.0" width="595.8" height="18.0" rx="3" fill="#256abf" opacity="0.9"/>
-<text x="98.3" y="197.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">raycasting · 8 job threads/pod — 8m 53s</text>
-<rect x="90.3" y="214.0" width="440.6" height="18.0" rx="3" fill="#c2410c" opacity="0.85"/>
-<text x="98.3" y="227.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">binary COPY · 2 streams/pod — 6m 34s</text>
-<rect x="530.8" y="214.0" width="155.3" height="18.0" rx="3" fill="#f4f4f1"/>
-<text x="538.8" y="227.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">26% idle</text>
-<line x1="90.3" y1="178.0" x2="90.3" y2="246.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt" stroke-dasharray="2 2"/>
-<line x1="686.1" y1="178.0" x2="686.1" y2="246.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt" stroke-dasharray="2 2"/>
+<rect x="92.5" y="184.0" width="576.1" height="18.0" rx="3" fill="#256abf" opacity="0.9"/>
+<text x="100.5" y="197.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">raycasting · 8 job threads/pod — 8m 14s</text>
+<rect x="92.5" y="214.0" width="425.9" height="18.0" rx="3" fill="#c2410c" opacity="0.85"/>
+<text x="100.5" y="227.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">binary COPY · 2 streams/pod — 6m 05s</text>
+<rect x="518.4" y="214.0" width="150.1" height="18.0" rx="3" fill="#f4f4f1"/>
+<text x="526.4" y="227.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">26% idle</text>
+<line x1="92.5" y1="178.0" x2="92.5" y2="246.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt" stroke-dasharray="2 2"/>
+<line x1="668.6" y1="178.0" x2="668.6" y2="246.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt" stroke-dasharray="2 2"/>
 <rect x="40.0" y="254.0" width="780.0" height="58.0" rx="6" fill="#f4f4f1"/>
 <text x="56.0" y="274.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">MAP costs max(raycast, write), not their sum: a finished window goes to a writer thread while the main thread claims the next task.</text>
-<text x="56.0" y="293.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">REDUCE cannot overlap — it needs the last row — but it is only 1m 60s: a section owns whole edges, so all 10 shards roll up locally.</text>
+<text x="56.0" y="293.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">REDUCE cannot overlap — it needs the last row — but it is only 2m 10s: a section owns whole edges, so all 9 shards roll up locally.</text>
 </svg>
