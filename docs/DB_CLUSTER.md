@@ -126,21 +126,79 @@ meo_exposure_samples (sample_point_id UUID, datetime TIMESTAMP, is_sunlit BOOLEA
 
 One row is one (sample point, timestep) observation carrying **one bit**. No array, no
 column per timestep, nothing packed. That identity is a property of the encoding, not
-an inevitability — and the encoding is expensive:
+an inevitability — and the encoding is expensive.
 
-| | rows | storage | |
+The alternative is to make the **bit's position** carry the timestamp instead of storing
+it: bit *k* of a bitmap is the observation at minute `180 + 3k`. The timestamp and the
+repeated UUID both disappear into the addressing. Measured on PostgreSQL 16, one section
+for one date (4,347 sample points × 360 timesteps):
+
+| encoding | rows | heap | bytes/row | vs long |
+|---|---:|---:|---:|---:|
+| **A — long form** (deployed) | 1,564,920 | 102 MB | 68.3 | 1× |
+| B — `BIT(360)`, one row per (sample point, **date**) | 4,347 | 464 kB | 109.3 | **225×** |
+| C — `BIT(60)`, one row per (sample point, date, **window**) | 26,082 | 2,152 kB | 84.5 | **48×** |
+
+Extrapolated to the full 60-date run: **502 GB → 2.2 GB (B) or 10.3 GB (C)**.
+
+The re-encoding is **lossless** — a bijection. Every individual (sample point, timestep)
+observation stays individually addressable, and a compatibility view reconstructs v1's
+three columns exactly:
+
+```sql
+CREATE VIEW meo_exposure_samples AS
+SELECT d.sample_point_id,
+       d.sim_date::timestamp + make_interval(mins => 180 + 3 * k) AS datetime,
+       get_bit(d.sunlit, k) = 1                                   AS is_sunlit
+FROM meo_exposure_day d CROSS JOIN generate_series(0, 359) AS k;
+```
+
+Verified by comparing the reconstruction against the long form in both directions with
+`EXCEPT ALL`: zero rows either way, identical counts, identical sunlit totals.
+
+### Why C rather than B, if it were adopted
+
+B keys a row on the whole **day**, which spans six 3-hour windows and therefore six
+tasks. Six tasks writing one row means `UPDATE`, and that forfeits everything
+[§5](#5-the-write-path) rests on: the leaf would no longer be created by the task that
+fills it, so `COPY` would be WAL-logged, `FREEZE` would be illegal, and six versions of
+every row would need vacuuming.
+
+C keys on (sample point, date, **window**) — exactly one row per sample per task. Every
+create-then-attach property survives untouched, and it is still 48× smaller.
+
+### What it would actually cost
+
+Measured, and it is not what one might guess. Packing wins the queries this system runs,
+because the whole packed table is smaller than the *subset of pages* the long form has to
+touch:
+
+| query | long form | packed (B) | |
 |---|---:|---:|---|
-| **long form** (deployed) | 7,886,872,800 | **499 GB** | 68 B per page row to carry 1 bit — **0.18%** payload |
-| packed: one row per (sample point, date) with a 360-bit bitmap | 21,907,980 | ~2 GB | **245× smaller**; would fit one instance |
+| point lookup, one sample one timestep | 0.89 ms | 0.37 ms | packed |
+| directional traverse (201 samples × 5 steps) | 1,640 buffers | 86 buffers | packed, 19× fewer |
+| section snapshot at one timestep | 22.0 ms / 13,041 buffers | 0.64 ms / 58 buffers | packed, 34× |
+| targeted correction (`db_correct_spikes`) | 71.8 ms | 9.5 ms | packed |
+| **full v1-view expansion** | **30.3 ms** | **141.6 ms** | **long form, 4.7×** |
 
-The packed form is not used because **the v1 column set is a hard requirement** and
-every v1 consumer selects those three columns by name. That is a real cost knowingly
-accepted rather than an oversight, and it is worth being blunt that it is what makes an
-eleven-instance cluster necessary at all.
+So the only measured penalty is materialising all 360 rows per stored row — which is
+what a v1 consumer doing `SELECT *` asks for. Everything keyed on (sample, time), which
+is every query this pipeline actually serves, gets faster.
 
-The compatibility views are what would make a change of mind possible later: they
-promise three columns while the storage underneath is free to change shape. Nothing
-downstream would need to know.
+### The consequence, stated plainly
+
+At variant C the fleet would produce 131,447,880 rows over the map phase — **246k rows/s**
+against the 2.4M rows/s a single 16 vCPU instance sustains. **One database instance, with
+10× headroom.** The ten-shard cluster, the Hilbert assignment, the admission control and
+the federation would all be unnecessary.
+
+**The cluster is a consequence of the encoding, not of the physics.** The encoding is
+fixed because the v1 column set is a hard requirement and every v1 consumer selects those
+three columns by name — a cost knowingly accepted, not an oversight.
+
+The compatibility views are what would make a change of mind cheap: they promise three
+columns while the storage underneath is free to change shape. No consumer would need to
+know.
 
 ### Why the coordinator is separate
 
