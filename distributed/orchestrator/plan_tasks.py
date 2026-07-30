@@ -7,11 +7,11 @@ Runs ONCE before the fleet starts, and is the only component that needs a global
 view of the work.
 
 USAGE
-    # full plan, including provisioning the ten shards
-    python plan_tasks.py --run-id run-2026-annual --shards 10 --provision
+    # full plan, including provisioning the nine shards
+    python plan_tasks.py --run-id run-2026-annual --shards 9 --provision
 
     # see what it would do, touching nothing
-    python plan_tasks.py --run-id run-2026-annual --shards 10 --dry-run
+    python plan_tasks.py --run-id run-2026-annual --shards 9 --dry-run
 
     # a two-shard, one-date smoke run
     python plan_tasks.py --run-id smoke --shards 2 --dates 6.21 --provision

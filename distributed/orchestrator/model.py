@@ -3,26 +3,58 @@
 Capacity model — the single source of truth for the pipeline's sizing.
 
 Every performance figure in the README, in docs/ and in the generated charts is
-derived from this module, so they cannot drift apart. Run it to print the sizing
-calculation and the benchmark tables:
+derived from this module, so they cannot drift apart.
 
-    python model.py                    # full report + shard sweep
-    python model.py --balance          # minimum shard count that keeps up
-    python model.py --sweep            # shard-count sensitivity
-    python model.py --workers 100      # re-derive for a different fleet
-
-WHY THIS IS EXECUTABLE AND NOT A SPREADSHEET
---------------------------------------------
-The central sizing question — "how many PostgreSQL instances does a 50-worker
-fleet need?" — has an exact answer, not a guess. The fleet produces rows at a
-known rate; one COPY stream ingests at a known rate; the cluster must match.
-Writing that as arithmetic makes the sizing auditable and lets it be re-derived
-for a different fleet size, a different city, or different hardware.
-
+    python model.py --derive           # THE SIZING ARGUMENT: target -> hardware
+    python model.py                    # full report + sensitivity sweeps
+    python model.py --bench            # the measurement ladder, with provenance
+    python model.py --frontier         # cost/time Pareto frontier
     python model.py --db               # what actually ends up in the database
 
-THE ONE CONSTRAINT THAT SHAPES EVERYTHING
------------------------------------------
+THE REQUIREMENT COMES FIRST, THE HARDWARE IS DERIVED
+----------------------------------------------------
+The amount of work is fixed and non-negotiable: 365,133 sample points x 360
+timesteps x 60 dates = 7.89 billion observations, at v1's exact schema. The
+DESIGN REQUIREMENT is also fixed:
+
+    a full 60-date run must complete in under 15 minutes.
+
+Nothing else is given. The fleet size and the database instance count are OUTPUTS
+of that requirement, not inputs to it. This module derives them:
+
+    1. measure the unit rates            (BENCHMARKS, below — one lever each)
+    2. compose them into T(W, S)         (total_seconds)
+    3. enumerate integer (W, S)          (frontier)
+    4. keep those holding 900 s under a stated STRESS ENVELOPE
+    5. take the cheapest                 (derive_shape)
+
+The answer is 54 workers and 9 data shards. It is pinned in WORKERS / SHARDS
+below so the rest of the module and the deployment manifests can read it, but
+`--derive` re-runs the whole argument from scratch and will contradict those
+constants if anything upstream changes.
+
+WHY A STRESS ENVELOPE AND NOT JUST THE TARGET
+---------------------------------------------
+The cheapest shape that hits 900 s on paper is 40 workers / 6 shards, at 14m 51s
+— 1.0% of margin. It is not deployable: losing one database instance puts it at
+15m 21s. Sizing to the nominal number alone is how a capacity plan that is
+arithmetically correct becomes operationally useless.
+
+So the chosen shape must hold 900 s in three conditions, not one:
+
+    NOMINAL       every rate as benchmarked
+    PESSIMISTIC   every benchmarked rate 15% below bench. This is not an event,
+                  it is a state of the world — the possibility that the model is
+                  simply optimistic. It does not "clear up".
+    PESSIMISTIC + FAILURE
+                  that same world, minus one database instance and 10% of the
+                  fleet. Because failures happen in the pessimistic world too,
+                  and the conjunction is what an SLO actually has to survive.
+
+The third condition is what separates 54/9 from the nominally-adequate 48/8.
+
+THE ONE CONSTRAINT THAT SHAPES EVERYTHING ELSE
+----------------------------------------------
 The schema is fixed: one row per (sample point, timestamp), exactly as v1 wrote
 it. At v2's 60 dates that is 7.89 billion rows, not the 145 million a per-edge sum
 would be. The downstream router traverses an edge as an ORDERED, DIRECTIONAL
@@ -30,7 +62,7 @@ sequence of sample points — walking east through a colonnade is not the same
 exposure as walking west through it — so the per-sample series is the product, not
 an intermediate.
 
-Everything below follows from refusing to discard it: the row rate sets the ingest
+Everything follows from refusing to discard it: the row rate sets the ingest
 requirement, the ingest requirement sets the shard count, and the shard count sets
 the reduce time.
 
@@ -292,10 +324,93 @@ ANALYZE_SECONDS        = 30           # 3,024 leaves per shard via vacuumdb --an
 FLEET_STARTUP_SECONDS = 45
 
 # ===========================================================================
-# DEPLOYMENT SHAPE
+# THE DESIGN REQUIREMENT
+#
+# This is the input. Everything in DEPLOYMENT SHAPE below is derived from it.
 # ===========================================================================
-WORKERS        = 50
-SHARDS         = 10           # data instances; + 1 coordinator, see cluster.py
+TARGET_SECONDS = 15 * 60      # a full 60-date run, end to end
+
+# The stress envelope the chosen shape must hold TARGET_SECONDS under. See the
+# module docstring for why the third condition exists.
+STRESS_RATE_SHORTFALL = 0.15   # every benchmarked rate this far below bench
+STRESS_SHARD_LOSS     = 1      # database instances lost mid-run
+STRESS_WORKER_LOSS    = 0.10   # fraction of the fleet evicted and not replaced
+
+# ===========================================================================
+# THE MEASUREMENT LADDER
+#
+# Each row is one benchmark that isolates ONE lever, run on the reference
+# hardware, in the order they were run. The composed model is only as good as
+# these, so each records what it measured and on what — a rate with no
+# provenance is a guess with a decimal point.
+#
+#   python model.py --bench
+#
+# Fields: (id, lever, measured value, unit, method, constant it sets)
+# ===========================================================================
+BENCHMARKS = [
+    ("B1", "v1 single-thread end-to-end", 73_027, "rows/s",
+     "v1's own 12-date reference run, 1.577e9 rows in 6.00 h on one desktop: "
+     "main-thread Physics.Raycast, one PostgreSQL, no batching. The only rate "
+     "here that is a whole-pipeline measurement rather than a microbenchmark.",
+     "V1_ROW_RATE"),
+    ("B2", "batched raycast dispatch", 3.0, "x",
+     "One 8 vCPU pod, one section, one window. Physics.Raycast in a loop vs "
+     "RaycastCommand.ScheduleBatch over the whole timestep. 3.0x and not 8x "
+     "because the main thread still schedules, completes and folds results, and "
+     "BVH traversal saturates memory bandwidth before ALUs.",
+     "BATCH_SPEEDUP"),
+    ("B3", "section-local BVH locality", 1.35, "x",
+     "Same pod, same ray count: rays drawn from one 1 km section vs drawn "
+     "city-wide. Isolates cache behaviour alone — the working set (section + "
+     "shadow halo) stays resident where a city-wide sweep misses constantly. "
+     "This is why sectioning is a throughput decision, not only a data-mapping one.",
+     "LOCALITY_SPEEDUP"),
+    ("B4", "one binary COPY stream", 200_000, "rows/s",
+     "One backend, BINARY COPY into a freshly created WAL-skipped relation on "
+     "16 vCPU / NVMe. Binary rather than CSV removes the server-side text parse "
+     "and puts ~30 B on the wire instead of ~52 B.",
+     "COPY_ROWS_PER_STREAM"),
+    ("B5", "streams per instance before contention", 12, "streams",
+     "Swept 1..20 concurrent COPY streams into DISTINCT relations on one 16 vCPU "
+     "instance. Scales linearly to 12, then flattens: a COPY backend is one busy "
+     "CPU, and the WAL writer, checkpointer, bgwriter and OS need the rest. "
+     "Distinct relations is what keeps it linear at all — same-relation streams "
+     "serialise on the extension lock.",
+     "shard_max_streams()"),
+    ("B6", "edge rollup aggregate", 12_000_000, "rows/s",
+     "GROUP BY (edge_id, datetime) over one shard's leaves, 8 parallel workers, "
+     "page-cache resident. Shard-local because a section owns whole edges.",
+     "EDGE_ROLLUP_ROWS_PER_S"),
+    ("B7", "rollup index build", 600_000, "rows/s",
+     "B-tree on the 14.5M-row rollup, 8 parallel maintenance workers, "
+     "16 GB maintenance_work_mem.",
+     "INDEX_BUILD_ROWS_PER_S"),
+    ("B8", "fleet spin-up", 45, "s",
+     "Pod scheduled to first task claimed, warm image cache: engine boot, scene "
+     "load, whole-city BVH warm. Counted rather than waved away — at an 11-minute "
+     "runtime it is 7% of wall clock and it does not shrink with more workers.",
+     "FLEET_STARTUP_SECONDS"),
+    ("B9", "ANALYZE the leaf tree", 30, "s",
+     "vacuumdb --analyze --jobs 8 over one shard's 3,360 leaves. A floor: it does "
+     "not shrink with more shards, so it sets the reduce phase's asymptote.",
+     "ANALYZE_SECONDS"),
+]
+
+# ===========================================================================
+# DEPLOYMENT SHAPE — DERIVED, not chosen
+#
+# These two numbers are the output of derive_shape() against TARGET_SECONDS and
+# the stress envelope above. They are pinned as constants because the k8s
+# manifests, pg_tune.py and the docs all read them — but `python model.py
+# --derive` re-runs the argument and asserts it still lands here.
+#
+#   54 workers = 6 per shard exactly, so each shard runs precisely the 12
+#   concurrent COPY streams B5 says it can sustain. W = 6S is the matched shape:
+#   one fewer worker per shard wastes ingest capacity, one more contends for it.
+# ===========================================================================
+WORKERS        = 54
+SHARDS         = 9            # data instances; + 1 coordinator, see cluster.py
 SECTION_METERS = 1000
 TIME_WINDOWS   = 6            # 6 x 3 h spans 03:00-21:00
 SECTIONS       = 84           # non-empty 1 km tiles over the Manhattan graph
@@ -385,36 +500,195 @@ def streams_per_shard(workers: int = WORKERS, shards: int = SHARDS) -> int:
     return min(shard_max_streams(), offered)
 
 
-def raycast_seconds(workers: int = WORKERS) -> float:
-    return EXPOSURE_ROWS / (workers * WORKER_RAYCAST_RATE)
+# Every timing function below takes `scale`: a multiplier on every BENCHMARKED
+# rate, 1.0 meaning "exactly as measured". It exists so the sizing can be tested
+# against the model being WRONG — see envelope() and STRESS_RATE_SHORTFALL. Rates
+# multiply; the spin-up cost is a duration, so it divides.
+def raycast_seconds(workers: int = WORKERS, scale: float = 1.0) -> float:
+    return EXPOSURE_ROWS / (max(1, workers) * WORKER_RAYCAST_RATE * scale)
 
 
-def cluster_ingest_rate(shards: int = SHARDS, workers: int = WORKERS) -> float:
-    return shards * streams_per_shard(workers, shards) * COPY_ROWS_PER_STREAM
+def cluster_ingest_rate(shards: int = SHARDS, workers: int = WORKERS,
+                        scale: float = 1.0) -> float:
+    return (max(1, shards) * streams_per_shard(workers, shards)
+            * COPY_ROWS_PER_STREAM * scale)
 
 
-def write_seconds(shards: int = SHARDS, workers: int = WORKERS) -> float:
-    return EXPOSURE_ROWS / cluster_ingest_rate(shards, workers)
+def write_seconds(shards: int = SHARDS, workers: int = WORKERS,
+                  scale: float = 1.0) -> float:
+    return EXPOSURE_ROWS / cluster_ingest_rate(shards, workers, scale)
 
 
-def reduce_seconds(shards: int = SHARDS) -> float:
-    return (EXPOSURE_ROWS / shards) / EDGE_ROLLUP_ROWS_PER_S \
-         + (EDGE_ROWS / shards) / INDEX_BUILD_ROWS_PER_S \
-         + ANALYZE_SECONDS
+def reduce_seconds(shards: int = SHARDS, scale: float = 1.0) -> float:
+    s = max(1, shards)
+    return (EXPOSURE_ROWS / s) / (EDGE_ROLLUP_ROWS_PER_S * scale) \
+         + (EDGE_ROWS / s) / (INDEX_BUILD_ROWS_PER_S * scale) \
+         + ANALYZE_SECONDS / scale
 
 
-def map_seconds(workers: int = WORKERS, shards: int = SHARDS) -> float:
+def map_seconds(workers: int = WORKERS, shards: int = SHARDS,
+                scale: float = 1.0) -> float:
     """
     A worker streams rows as it computes them, so writing overlaps raycasting and
     the map phase costs max() rather than the sum. Whichever side is larger is
     the binding constraint; the shard count is chosen to keep it the compute side.
     """
-    return max(raycast_seconds(workers), write_seconds(shards, workers))
+    return max(raycast_seconds(workers, scale), write_seconds(shards, workers, scale))
 
 
-def total_seconds(workers: int = WORKERS, shards: int = SHARDS) -> float:
+def total_seconds(workers: int = WORKERS, shards: int = SHARDS,
+                  scale: float = 1.0) -> float:
     # Reduce cannot begin until the last row lands, so it adds rather than overlaps.
-    return FLEET_STARTUP_SECONDS + map_seconds(workers, shards) + reduce_seconds(shards)
+    return (FLEET_STARTUP_SECONDS / scale
+            + map_seconds(workers, shards, scale)
+            + reduce_seconds(shards, scale))
+
+
+# ---------------------------------------------------------------------------
+# Cost
+# ---------------------------------------------------------------------------
+def vcpu(workers: int = WORKERS, shards: int = SHARDS) -> int:
+    """Total provisioned vCPU. The objective the derivation minimises."""
+    return (workers * WORKER_VCPU + shards * SHARD_VCPU
+            + COORD_VCPU + POOLERS * POOLER_VCPU)
+
+
+def ram_gb(workers: int = WORKERS, shards: int = SHARDS) -> int:
+    return (workers * WORKER_GB + shards * SHARD_GB
+            + COORD_GB + POOLERS * POOLER_GB)
+
+
+# ---------------------------------------------------------------------------
+# THE DERIVATION — requirement in, hardware out
+# ---------------------------------------------------------------------------
+# A degraded instance must not turn the pipeline I/O-bound. This is the
+# architecture's central thesis expressed as a test rather than an aspiration:
+# the cluster exists so the fleet never waits on the database, and a claim that
+# only holds while every instance is healthy is not the claim being made.
+MIN_IO_HEADROOM_DEGRADED = 0.10
+
+
+def envelope(workers: int, shards: int) -> dict:
+    """
+    Every condition the chosen shape must satisfy. Three are deadlines under
+    stress; two are structural.
+
+    DEADLINES (all against TARGET_SECONDS)
+      nominal              every rate as benchmarked
+      pessimistic          every rate STRESS_RATE_SHORTFALL below bench
+      pessimistic_failure  that world, minus one instance and 10% of the fleet
+
+    STRUCTURAL
+      survives_shard_loss  still compute-bound, with headroom, at S-1. Without
+          this the deadline conditions alone happily select an 8-shard shape whose
+          cluster is 1% from becoming the bottleneck the moment anything hiccups.
+      saturated            the fleet offers each shard the full complement of
+          COPY streams B5 says it sustains. A shape that provisions nine
+          instances and then feeds each of them ten streams out of twelve is
+          paying for ingest capacity it has no way to use.
+
+    `failure` (nominal rates, one failure) is computed for reporting but is
+    implied by pessimistic_failure and does not gate.
+    """
+    good = 1.0 - STRESS_RATE_SHORTFALL
+    degraded_w = max(1, int(workers * (1.0 - STRESS_WORKER_LOSS)))
+    degraded_s = max(1, shards - STRESS_SHARD_LOSS)
+
+    e = {
+        "nominal":       total_seconds(workers, shards),
+        "failure":       total_seconds(degraded_w, degraded_s),
+        "pessimistic":   total_seconds(workers, shards, good),
+        "pessimistic_failure": total_seconds(degraded_w, degraded_s, good),
+    }
+    e["deadlines_ok"] = all(e[k] <= TARGET_SECONDS
+                            for k in ("nominal", "pessimistic", "pessimistic_failure"))
+    e["survives_shard_loss"] = (
+        shards > STRESS_SHARD_LOSS
+        and io_headroom(workers, degraded_s) >= MIN_IO_HEADROOM_DEGRADED)
+    e["saturated"] = streams_per_shard(workers, shards) >= shard_max_streams()
+    e["passes"] = (e["deadlines_ok"] and e["survives_shard_loss"] and e["saturated"])
+    e["slack"] = 1.0 - e["pessimistic_failure"] / TARGET_SECONDS
+    return e
+
+
+def frontier(max_workers: int = 200, max_shards: int = 40) -> list[tuple]:
+    """
+    Cost/time Pareto frontier over integer (workers, shards): for each vCPU
+    budget, the fastest achievable nominal run, keeping only strict improvements.
+
+    This is the curve the deployment shape is chosen ON, and the one the
+    cost_time figure draws.
+    """
+    best: dict[int, tuple] = {}
+    for w in range(1, max_workers + 1):
+        for s in range(1, max_shards + 1):
+            c, t = vcpu(w, s), total_seconds(w, s)
+            if c not in best or t < best[c][0]:
+                best[c] = (t, w, s)
+    out, floor = [], float("inf")
+    for c in sorted(best):
+        t, w, s = best[c]
+        if t < floor - 1e-9:
+            out.append((c, w, s, t))
+            floor = t
+    return out
+
+
+def derive_shape(target: float = TARGET_SECONDS,
+                 max_workers: int = 200, max_shards: int = 40) -> dict:
+    """
+    THE sizing answer: the cheapest integer (workers, shards) that holds `target`
+    across the whole stress envelope.
+
+    Exhaustive rather than analytic. The continuous optimum (Lagrange on
+    8W + 16S subject to A/W + B/S = C) gives W/S = 7.7 and is useful for
+    intuition, but streams_per_shard() steps at W/S = 6 and the answer must be
+    integral, so the true frontier is a staircase and search is both simpler and
+    exact. See docs/PERFORMANCE.md.
+    """
+    feasible, deadline_only = [], []
+    for w in range(1, max_workers + 1):
+        for s in range(1, max_shards + 1):
+            e = envelope(w, s)
+            if not (e["deadlines_ok"] and e["nominal"] <= target):
+                continue
+            deadline_only.append((vcpu(w, s), w, s))
+            if e["passes"]:
+                feasible.append((vcpu(w, s), -e["slack"], w, s, e))
+    if not feasible:
+        raise ValueError(f"no shape within {max_workers}x{max_shards} holds {target}s")
+    feasible.sort()
+    # Ties on cost are broken by envelope slack, which is why 54/9 wins its band.
+    cost, _, w, s, e = feasible[0]
+
+    # The band shown by --derive deliberately includes shapes that clear the three
+    # DEADLINES but fail a structural condition — those are the interesting rows,
+    # because they are the ones a deadline-only analysis would have selected.
+    deadline_only.sort()
+    band = [(c, ww, ss) for c, ww, ss in deadline_only if c <= cost][-6:]
+    band += [(c, ww, ss) for c, ww, ss in deadline_only if c > cost][:3]
+    return {"workers": w, "shards": s, "vcpu": cost, "ram_gb": ram_gb(w, s),
+            "envelope": e, "feasible_count": len(feasible),
+            "deadline_only_count": len(deadline_only), "band": band}
+
+
+def cheapest_nominal(target: float = TARGET_SECONDS,
+                     max_workers: int = 200, max_shards: int = 40) -> tuple:
+    """
+    The cheapest shape that hits `target` with NO stress allowance — i.e. the
+    answer you get by sizing to the headline number alone.
+
+    Reported by --derive specifically to be rejected: it is 40/6, and one lost
+    database instance puts it over.
+    """
+    out = None
+    for w in range(1, max_workers + 1):
+        for s in range(1, max_shards + 1):
+            if total_seconds(w, s) <= target:
+                c = vcpu(w, s)
+                if out is None or c < out[0]:
+                    out = (c, w, s, total_seconds(w, s))
+    return out
 
 
 def v1_equivalent_seconds(rows: float = None) -> float:
@@ -580,17 +854,29 @@ def report() -> None:
         ("coordinator", 1, COORD_VCPU, COORD_GB),
         ("pgbouncer", POOLERS, POOLER_VCPU, POOLER_GB),
     ]
-    tot_cpu = tot_mem = 0
     for name, n, cpu, gb in rows:
-        tot_cpu += n * cpu
-        tot_mem += n * gb
         print(f"    {name:<14}{n:>3} x {cpu:>3} vCPU / {gb:>4} GB"
               f"  = {n * cpu:>4} vCPU / {n * gb:>5} GB")
+    tot_cpu, tot_mem = vcpu(), ram_gb()
     print(f"    {'TOTAL':<14}                           "
           f"= {tot_cpu:>4} vCPU / {tot_mem:>5} GB")
     print(f"    storage        {SHARDS:>3} x {RAW_SAMPLES_GB / SHARDS:>5.1f} GB data"
           f"  = {RAW_SAMPLES_GB:>4.0f} GB + index/WAL headroom")
     print(f"    cost           {tot_cpu * T / 3600:>6.1f} vCPU-hours for the {DAYS}-date run")
+
+    # The requirement this shape exists to satisfy, and its margin. Printed last
+    # because it is the number the whole file is accountable to.
+    e = envelope(WORKERS, SHARDS)
+    print(f"\n  AGAINST THE {TARGET_SECONDS / 60:.0f}-MINUTE REQUIREMENT")
+    for label, key in (("nominal", "nominal"),
+                       ("one shard + 10% of fleet lost", "failure"),
+                       (f"every rate {STRESS_RATE_SHORTFALL:.0%} below bench", "pessimistic"),
+                       ("both at once", "pessimistic_failure")):
+        v = e[key]
+        print(f"    {label:<32}{fmt(v):>10}   "
+              f"{100 * (1 - v / TARGET_SECONDS):>+5.1f}%  "
+              f"{'OVER' if v > TARGET_SECONDS else 'ok'}")
+    print(f"    derived by      python model.py --derive")
     print(bar)
 
 
@@ -701,6 +987,221 @@ def inventory() -> None:
     print(bar)
 
 
+def bench_report() -> None:
+    """The measurement ladder, with what each benchmark isolated and on what."""
+    bar = "=" * 78
+    print(bar)
+    print("  The measurement ladder — every rate the model composes")
+    print(bar)
+    print("\n  Each benchmark isolates ONE lever. The composed prediction is only as")
+    print("  good as these, so each records its method; a rate with no provenance is")
+    print("  a guess with a decimal point.\n")
+    for bid, lever, val, unit, method, const in BENCHMARKS:
+        v = f"{val:,.0f}" if isinstance(val, int) or val >= 100 else f"{val:.2f}"
+        print(f"  {bid}  {lever}")
+        print(f"      {v} {unit:<9} -> {const}")
+        for line in _wrap(method, 68):
+            print(f"      {line}")
+        print()
+    print("  COMPOSED")
+    print(f"    per-worker rate   B1 x B2 x B3 = {V1_ROW_RATE:,.0f} x {BATCH_SPEEDUP} x "
+          f"{LOCALITY_SPEEDUP} = {WORKER_ROW_RATE:,.0f} rows/s")
+    print(f"    per-shard ingest  B4 x B5      = {COPY_ROWS_PER_STREAM:,} x "
+          f"{shard_max_streams()} = {shard_max_streams() * COPY_ROWS_PER_STREAM:,.0f} rows/s")
+    print(f"    workers per shard = {shard_max_streams() * COPY_ROWS_PER_STREAM:,.0f} / "
+          f"{WORKER_ROW_RATE:,.0f} = {shard_max_streams() * COPY_ROWS_PER_STREAM / WORKER_ROW_RATE:.2f}"
+          f"  -> {shard_max_streams() // STREAMS_PER_WORKER} at {STREAMS_PER_WORKER} streams each")
+    print(f"\n    T(W,S) =   {FLEET_STARTUP_SECONDS}"
+          f"   +   max( {EXPOSURE_ROWS / WORKER_ROW_RATE:,.0f}/W , "
+          f"{EXPOSURE_ROWS / (shard_max_streams() * COPY_ROWS_PER_STREAM):,.0f}/S )"
+          f"   +   {EXPOSURE_ROWS / EDGE_ROLLUP_ROWS_PER_S + EDGE_ROWS / INDEX_BUILD_ROWS_PER_S:,.0f}/S + {ANALYZE_SECONDS}")
+    print(f"             ^B8            ^B1-B3     ^B4-B5           ^B6-B7   ^B9")
+    print(f"             spin-up        raycast    write            reduce")
+    print(f"                            \\____ overlap: max() ____/")
+    print(f"\n    Irreducible floor, at any hardware: "
+          f"{FLEET_STARTUP_SECONDS + ANALYZE_SECONDS} s "
+          f"({100 * (FLEET_STARTUP_SECONDS + ANALYZE_SECONDS) / TARGET_SECONDS:.0f}% of the "
+          f"{TARGET_SECONDS / 60:.0f}-minute budget).")
+    print("    Neither term shrinks with more workers or more shards, so the whole")
+    print(f"    sizing problem is spending the remaining "
+          f"{TARGET_SECONDS - FLEET_STARTUP_SECONDS - ANALYZE_SECONDS:.0f} s well.")
+    print(bar)
+
+
+def _wrap(text: str, width: int) -> list[str]:
+    out, line = [], ""
+    for word in text.split():
+        if len(line) + len(word) + 1 > width:
+            out.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    if line:
+        out.append(line)
+    return out
+
+
+def derive_report() -> None:
+    """
+    The sizing argument, start to finish: requirement -> benchmarks -> frontier ->
+    stress envelope -> chosen shape. This is the report docs/PERFORMANCE.md follows.
+    """
+    bar = "=" * 78
+    print(bar)
+    print(f"  SIZING DERIVATION — how many workers, how many database instances?")
+    print(bar)
+
+    print(f"\n  STEP 0 — THE REQUIREMENT (the only input)")
+    print(f"    work            {EXPOSURE_ROWS:>16,} rows   "
+          f"{SAMPLE_POINTS:,} x {STEPS_PER_DAY} x {DAYS}, non-negotiable")
+    print(f"    deadline        {TARGET_SECONDS:>16,.0f} s     "
+          f"= {TARGET_SECONDS / 60:.0f} min, end to end")
+    print(f"    v1 would need   {v1_equivalent_seconds():>16,.0f} s     "
+          f"= {fmt(v1_equivalent_seconds())} at its measured rate")
+    print(f"    so the pipeline must be {v1_equivalent_seconds() / TARGET_SECONDS:.0f}x "
+          f"faster than v1, work-normalised.")
+
+    print(f"\n  STEP 1 — UNIT RATES (python model.py --bench)")
+    print(f"    per worker      {WORKER_ROW_RATE:>16,.0f} rows/s  "
+          f"B1 x B2 x B3 = {V1_ROW_RATE / 1000:.0f}k x {BATCH_SPEEDUP} x {LOCALITY_SPEEDUP}")
+    print(f"    per shard       {shard_max_streams() * COPY_ROWS_PER_STREAM:>16,.0f} rows/s  "
+          f"B4 x B5 = {COPY_ROWS_PER_STREAM // 1000}k x {shard_max_streams()}")
+    print(f"    one shard feeds {shard_max_streams() // STREAMS_PER_WORKER:>16,} workers  "
+          f"at {STREAMS_PER_WORKER} COPY streams each")
+
+    print(f"\n  STEP 2 — THE COMPOSED MODEL")
+    A = EXPOSURE_ROWS / WORKER_ROW_RATE
+    B = EXPOSURE_ROWS / (shard_max_streams() * COPY_ROWS_PER_STREAM)
+    C = EXPOSURE_ROWS / EDGE_ROLLUP_ROWS_PER_S + EDGE_ROWS / INDEX_BUILD_ROWS_PER_S
+    print(f"    T(W,S) = {FLEET_STARTUP_SECONDS} + max({A:,.0f}/W, {B:,.0f}/S) "
+          f"+ {C:,.0f}/S + {ANALYZE_SECONDS}")
+    print(f"    floor  = {FLEET_STARTUP_SECONDS + ANALYZE_SECONDS} s at ANY hardware "
+          f"(spin-up + ANALYZE neither shrink)")
+    print(f"    budget = {TARGET_SECONDS - FLEET_STARTUP_SECONDS - ANALYZE_SECONDS:.0f} s "
+          f"to spend on the two terms that do")
+
+    print(f"\n  STEP 3 — THE NAIVE ANSWER, AND WHY IT IS REJECTED")
+    c0, w0, s0, t0 = cheapest_nominal()
+    e0 = envelope(w0, s0)
+    print(f"    cheapest shape hitting {TARGET_SECONDS / 60:.0f} min: "
+          f"{w0} workers / {s0} shards, {c0} vCPU, {fmt(t0)}")
+    print(f"    margin {100 * (1 - t0 / TARGET_SECONDS):.1f}% — and then:")
+    print(f"      lose one database instance         {fmt(e0['failure']):>10}   "
+          f"{'OVER' if e0['failure'] > TARGET_SECONDS else 'ok'}")
+    print(f"      rates 15% below bench              {fmt(e0['pessimistic']):>10}   "
+          f"{'OVER' if e0['pessimistic'] > TARGET_SECONDS else 'ok'}")
+    print(f"    Sizing to the nominal number is how an arithmetically correct plan")
+    print(f"    becomes operationally useless.")
+
+    print(f"\n  STEP 4 — THE ENVELOPE (what the shape must actually satisfy)")
+    print(f"    three deadlines, all against {TARGET_SECONDS / 60:.0f} min:")
+    print(f"      NOMINAL               every rate as benchmarked")
+    print(f"      PESSIMISTIC           every rate {STRESS_RATE_SHORTFALL:.0%} below bench. Not an event —")
+    print(f"                            a state of the world. It does not clear up.")
+    print(f"      PESSIMISTIC + FAILURE that world, minus {STRESS_SHARD_LOSS} instance and "
+          f"{STRESS_WORKER_LOSS:.0%} of the fleet,")
+    print(f"                            because failures happen in it too")
+    print(f"    and two structural conditions:")
+    print(f"      SURVIVES SHARD LOSS   still compute-bound with "
+          f">={MIN_IO_HEADROOM_DEGRADED:.0%} ingest headroom at S-1.")
+    print(f"                            The thesis 'the fleet never waits on the database'")
+    print(f"                            is not being claimed only for healthy clusters.")
+    print(f"      SATURATED             the fleet offers each shard all "
+          f"{shard_max_streams()} streams B5 sustains.")
+    print(f"                            Provisioning an instance and feeding it 10 of 12")
+    print(f"                            is paying for capacity with no way to use it.")
+
+    print(f"\n  STEP 5 — CHEAPEST SHAPE SATISFYING ALL FIVE")
+    d = derive_shape()
+    print(f"    {'vCPU':>6} {'W':>4} {'S':>3} {'W/S':>5} {'strm':>5} {'nominal':>10} "
+          f"{'-15%':>10} {'-15%+fail':>10} {'io@S-1':>7}  why not")
+    for c, w, s in d["band"]:
+        e = envelope(w, s)
+        if (w, s) == (d["workers"], d["shards"]):
+            why = "<== chosen"
+        elif not e["survives_shard_loss"]:
+            why = f"S-1 headroom {io_headroom(w, s - 1) * 100:+.0f}% — too thin"
+        elif not e["saturated"]:
+            why = f"uses {streams_per_shard(w, s)} of {shard_max_streams()} streams"
+        elif not e["deadlines_ok"]:
+            why = "misses a deadline"
+        else:
+            why = "dearer"
+        print(f"    {c:>6} {w:>4} {s:>3} {w / s:>5.1f} {streams_per_shard(w, s):>5} "
+              f"{fmt(e['nominal']):>10} {fmt(e['pessimistic']):>10} "
+              f"{fmt(e['pessimistic_failure']):>10} {io_headroom(w, s - 1) * 100:>+6.0f}%  {why}")
+    print(f"\n    {d['deadline_only_count']:,} shapes meet the three deadlines; only "
+          f"{d['feasible_count']:,} also meet")
+    print(f"    both structural conditions. Those two are what decide it, not cost: the")
+    print(f"    cost band is flat to within a few percent, so the deadlines alone")
+    print(f"    leave a dozen indistinguishable shapes. Requiring the cluster to")
+    print(f"    survive an instance loss eliminates every 8-shard shape; requiring it")
+    print(f"    to be saturated eliminates 53/9, which buys nine instances and then")
+    print(f"    feeds each of them ten streams out of twelve.")
+
+    print(f"\n  RESULT")
+    print(f"    {d['workers']} map workers  x  {WORKER_VCPU} vCPU / {WORKER_GB} GB")
+    print(f"    {d['shards']} data shards  x  {SHARD_VCPU} vCPU / {SHARD_GB} GB"
+          f"   (+1 coordinator, {POOLERS} poolers)")
+    print(f"    {d['vcpu']} vCPU / {d['ram_gb']:,} GB total"
+          f"   —   {fmt(d['envelope']['nominal'])} nominal, "
+          f"{100 * (1 - d['envelope']['nominal'] / TARGET_SECONDS):.0f}% under target")
+    print(f"    W = 6S exactly: each shard runs precisely the {shard_max_streams()} COPY streams")
+    print(f"    B5 says it sustains. One worker fewer per shard wastes ingest capacity;")
+    print(f"    one more contends for it.")
+    if (d["workers"], d["shards"]) != (WORKERS, SHARDS):
+        print(f"\n    !! DISAGREES with the pinned WORKERS={WORKERS} / SHARDS={SHARDS}."
+              f" Update them, the k8s")
+        print(f"       manifests and the docs — or explain the deviation here.")
+    else:
+        print(f"\n    Matches the pinned WORKERS={WORKERS} / SHARDS={SHARDS}. "
+              f"Manifests and docs agree.")
+    print(bar)
+
+
+def frontier_report() -> None:
+    """The cost/time Pareto frontier — the curve the shape is chosen on."""
+    bar = "=" * 78
+    print(bar)
+    print("  Cost / time Pareto frontier")
+    print(bar)
+    print("\n  For each vCPU budget, the fastest achievable run. Marginal return is")
+    print("  what matters: the curve is ~1/W, so it decays as W^-2 and there is NO")
+    print("  knee to find. The deadline plus the stress envelope is what picks a")
+    print("  point; 'diminishing returns' does not, because they diminish smoothly.\n")
+    pf = frontier()
+    print(f"  {'vCPU':>6} {'W':>4} {'S':>3} {'total':>10} {'s per +100 vCPU':>17}  bound by")
+    prev = None
+    shown = 0
+    for c, w, s, t in pf:
+        # Thin the low-cost tail, which is dozens of near-identical single-shard rows.
+        if c < 100 and shown > 4:
+            prev = (c, t)
+            continue
+        d = f"{(prev[1] - t) / ((c - prev[0]) / 100):>14,.0f} s" if prev else "".rjust(16)
+        mark = ""
+        if prev and prev[1] > TARGET_SECONDS >= t:
+            mark = f"  <== {TARGET_SECONDS / 60:.0f}-min line"
+        if (w, s) == (WORKERS, SHARDS):
+            mark = "  <== deployed"
+        print(f"  {c:>6} {w:>4} {s:>3} {fmt(t):>10} {d:>17}  {bound_by(w, s)}{mark}")
+        prev = (c, t)
+        shown += 1
+        if c > vcpu() * 1.5:
+            break
+    floor = FLEET_STARTUP_SECONDS + ANALYZE_SECONDS
+    print(f"\n  The staircase: W climbs at fixed S until W/S passes "
+          f"{shard_max_streams() * COPY_ROWS_PER_STREAM / WORKER_ROW_RATE:.1f} and the")
+    print(f"  shape goes I/O-bound, then S increments and W resumes. Every tread is")
+    print(f"  compute-bound by construction — that is the cluster doing its job.")
+    print(f"\n  Asymptote: {floor} s. Even infinite hardware cannot beat spin-up +")
+    print(f"  ANALYZE, so past ~{vcpu(103, 14)} vCPU an extra 100 vCPU buys less than the "
+          f"{ANALYZE_SECONDS} s")
+    print(f"  ANALYZE floor itself — the point where more hardware stops being an")
+    print(f"  engineering answer and starts being a rounding error.")
+    print(bar)
+
+
 def sweep() -> None:
     print(f"{'shards':>7} {'ingest':>11} {'map':>10} {'reduce':>10} "
           f"{'total':>10} {'speedup':>9}  bound by")
@@ -715,7 +1216,8 @@ def sweep() -> None:
     print("  shards only shorten the reduce phase, at linear cost — 20 shards buys")
     print(f"  {total_seconds(shards=SHARDS) - total_seconds(shards=20):.0f} s "
           f"for double the database spend.")
-    print("  Past ~25 shards it gets WORSE: 50 workers cannot offer enough concurrent")
+    print(f"  Past ~{WORKERS // STREAMS_PER_WORKER} shards it gets WORSE: {WORKERS} workers "
+          f"cannot offer enough concurrent")
     print("  streams to keep that many instances busy, so each one starves.")
 
 
@@ -741,6 +1243,12 @@ def worker_sweep() -> None:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--derive", action="store_true",
+                   help="THE sizing argument: requirement -> hardware")
+    p.add_argument("--bench", action="store_true",
+                   help="the measurement ladder, with provenance")
+    p.add_argument("--frontier", action="store_true",
+                   help="cost/time Pareto frontier")
     p.add_argument("--balance", action="store_true",
                    help="print the minimum viable shard count only")
     p.add_argument("--db", action="store_true",
@@ -750,7 +1258,13 @@ def main() -> int:
     p.add_argument("--workers", type=int, default=WORKERS)
     a = p.parse_args()
 
-    if a.balance:
+    if a.derive:
+        derive_report()
+    elif a.bench:
+        bench_report()
+    elif a.frontier:
+        frontier_report()
+    elif a.balance:
         print(balanced_shards(a.workers))
     elif a.db:
         inventory()

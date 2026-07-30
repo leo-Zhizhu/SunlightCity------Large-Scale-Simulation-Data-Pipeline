@@ -18,10 +18,10 @@
 #
 #   00  namespace, quota, limits
 #   10  config + credentials
-#   20  the database cluster: 1 coordinator + 10 shards        <- must be Ready
+#   20  the database cluster: 1 coordinator + 9 shards         <- must be Ready
 #   25  pgbouncer, in front of the coordinator only
 #   30  schema + plan + provision (Job, runs ONCE)             <- must be Complete
-#   40  the map fleet: 50 headless Unity workers               <- must be Complete
+#   40  the map fleet: 54 headless Unity workers               <- must be Complete
 #   50  reduce (Job) + the lease reaper (CronJob)
 #
 # Applying 40 before 30 completes does not corrupt anything — the workers find no run
@@ -67,8 +67,8 @@ images:
 # SCALING MEANS CHANGING TWO NUMBERS TOGETHER, IN FOUR PLACES.
 #
 # Adding workers without adding shards converts a compute-bound pipeline into an
-# I/O-bound one, which is the exact failure this architecture exists to avoid: 50
-# workers against ONE instance finish in 1.18 h; against ten, 11m 38s. Run
+# I/O-bound one, which is the exact failure this architecture exists to avoid: 54
+# workers against ONE instance finish in 1.18 h; against nine, 11m 08.7s. Run
 # `python distributed/orchestrator/model.py --workers-sweep` for the minimum shard
 # count at any fleet size.
 #

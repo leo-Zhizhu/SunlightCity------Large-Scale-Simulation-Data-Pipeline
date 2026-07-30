@@ -15,7 +15,7 @@
 -- one end enters sun and leaves shade while walking it from the other does the
 -- reverse. A per-edge sum cannot express that. So the row count stands.
 --
--- One instance cannot absorb 7.89 billion rows from 50 concurrent producers in
+-- One instance cannot absorb 7.89 billion rows from 54 concurrent producers in
 -- any reasonable time. A COPY backend is one busy CPU, so a 16 vCPU instance
 -- sustains about twelve productive streams — roughly 2.4M rows/s — while the
 -- fleet produces 14.8M rows/s. Six sevenths of the fleet would sit waiting.
@@ -377,7 +377,7 @@ $$ LANGUAGE plpgsql;
 --
 -- Where the instances are, and what state they are in. Workers resolve their
 -- target instance through this rather than through environment variables, so a
--- shard can be replaced mid-run without redeploying 50 pods.
+-- shard can be replaced mid-run without redeploying 54 pods.
 --
 -- 'draining' exists for exactly that: it stops new tasks being dispatched to a
 -- shard while the ones in flight finish, rather than failing them.
@@ -433,7 +433,7 @@ $$ LANGUAGE plpgsql;
 -- 6. Resolution view — what a worker asks for.
 --
 -- One query answers "given my section, where do I write?". Joining in the worker
--- would mean shipping the whole map to 50 pods and keeping it fresh.
+-- would mean shipping the whole map to 54 pods and keeping it fresh.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW meo_section_routing AS
 SELECT s.section_id,

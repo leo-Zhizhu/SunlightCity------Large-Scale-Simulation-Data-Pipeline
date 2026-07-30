@@ -107,13 +107,13 @@
 --      task_id = N over 261k rows — would generate WAL, bloat, and vacuum debt on
 --      every retry.
 --
--- Leaf count per shard: ~8 sections x 60 dates x 6 windows = ~3,024, each ~261k
+-- Leaf count per shard: ~9 sections x 60 dates x 6 windows = ~3,360, each ~261k
 -- rows / ~17 MB.
 --
 -- Three thousand relations on one instance is a lot, and the TWO-LEVEL tree is what
 -- keeps it cheap. Pruning resolves the LIST level over ~8 section values, then the
 -- RANGE level over the ~360 datetime bounds inside the one section it selected —
--- never 3,024 bounds in a single flat list. A one-level design keyed on datetime
+-- never 3,360 bounds in a single flat list. A one-level design keyed on datetime
 -- alone would have to consider every leaf on the instance for every query, and would
 -- also give a task no relation of its own to COPY into, forfeiting all four
 -- properties above.

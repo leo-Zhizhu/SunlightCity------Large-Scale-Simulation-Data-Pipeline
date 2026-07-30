@@ -21,9 +21,9 @@
 --   path during the map phase.)
 --
 --   ANALYTICS. "Sunlit fraction of every street at 11:00 in July." Rare, and it
---   genuinely spans the whole city — so here one SQL statement over all ten shards
+--   genuinely spans the whole city — so here one SQL statement over all nine shards
 --   IS what you want. That is what the federation below provides, via
---   postgres_fdw with asynchronous foreign scans so the ten shards are read
+--   postgres_fdw with asynchronous foreign scans so the nine shards are read
 --   concurrently rather than one after another.
 --
 -- Routing is served by meo_edge_shard() and meo_route_plan().
@@ -146,7 +146,7 @@ $$ LANGUAGE sql STABLE;
 
 
 -- =============================================================================
--- 2. ANALYTICS FEDERATION — postgres_fdw over the ten shards.
+-- 2. ANALYTICS FEDERATION — postgres_fdw over the nine shards.
 -- =============================================================================
 
 -- Creates (or updates) one foreign server per registered shard.
@@ -154,7 +154,7 @@ $$ LANGUAGE sql STABLE;
 -- The options are the load-bearing part:
 --
 --   async_capable 'true'  — PostgreSQL 14+ runs foreign scans of an Append node
---     CONCURRENTLY. Without it, a query spanning ten shards issues ten remote
+--     CONCURRENTLY. Without it, a query spanning nine shards issues nine remote
 --     queries one after another and takes the SUM of their latencies instead of
 --     the MAX. On a whole-network snapshot that is the difference between ~200 ms
 --     and ~2 s, and it is one option.
@@ -283,7 +283,7 @@ $$ LANGUAGE plpgsql;
 -- -----------------------------------------------------------------------------
 -- The analytics query the README's heatmap is built from.
 --
--- Aggregates every edge in the city at one instant. Spans all ten shards by
+-- Aggregates every edge in the city at one instant. Spans all nine shards by
 -- construction, which is exactly when the federation earns its keep.
 --
 -- TWO OPTIMISATIONS, AND THEY ARE MUTUALLY EXCLUSIVE PER PLAN NODE — worth
@@ -328,7 +328,7 @@ COMMIT;
 
 -- -----------------------------------------------------------------------------
 -- Settings the federation depends on, pinned at DATABASE scope so every session
--- gets them — a client that connects without them silently reads the ten shards
+-- gets them — a client that connects without them silently reads the nine shards
 -- serially, which looks like "the federation is slow" rather than like a
 -- misconfiguration. Also present in postgresql.coordinator.conf.
 --

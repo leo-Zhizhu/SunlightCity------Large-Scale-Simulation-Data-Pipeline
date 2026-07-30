@@ -21,7 +21,7 @@ namespace SunlightCity.Distributed
     /// Note which endpoints appear here and which do not. The COORDINATOR's address
     /// is configuration; the SHARDS' addresses are not — they are read from the
     /// coordinator's meo_shards registry at boot (see <see cref="ShardRouter"/>),
-    /// so an instance can be replaced mid-run without redeploying 50 pods.
+    /// so an instance can be replaced mid-run without redeploying 54 pods.
     /// </summary>
     public sealed class WorkerConfig
     {

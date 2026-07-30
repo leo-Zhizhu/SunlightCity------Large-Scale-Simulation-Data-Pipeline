@@ -1,7 +1,7 @@
 # =============================================================================
 # THE REDUCE PHASE — finalise the dataset after the map fleet drains.
 #
-# One small pod that drives all ten shards concurrently. In a classic MapReduce this
+# One small pod that drives all nine shards concurrently. In a classic MapReduce this
 # is where the shuffle happens and where most of the cost lives; here it is
 # bookkeeping, and the reason is a decision made in 01_cluster_topology.sql:
 #
@@ -10,14 +10,14 @@
 #   rollup GROUP BY (edge_id, datetime) is COMPLETE within a single instance.
 #
 # There is therefore nothing to merge across shards — no shuffle, no barrier, no
-# coordinator gathering partial sums. Ten instances each aggregate their own tenth of
+# coordinator gathering partial sums. Nine instances each aggregate their own ninth of
 # a billion rows in parallel and stop, which is why this is ~2 min rather than ~20.
 #
 # Had sections been defined by sample-point position instead, ~12% of edges would
 # straddle a boundary, this pod would have needed a distributed sum, and every
 # routing query would have become a cross-shard join for the life of the dataset.
 #
-# THE POD IS SMALL BECAUSE THE WORK IS NOT HERE. It opens ten sockets and waits;
+# THE POD IS SMALL BECAUSE THE WORK IS NOT HERE. It opens nine sockets and waits;
 # every aggregate, index build and ANALYZE runs inside a shard, governed by that
 # instance's maintenance_work_mem. Sizing this container generously would do nothing.
 #
@@ -184,7 +184,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 1
-      # The leaf sweep touches all ten shards; 3 min is ample and still bounded below
+      # The leaf sweep touches all nine shards; 3 min is ample and still bounded below
       # the point where a stuck reaper would overlap two later ticks.
       activeDeadlineSeconds: 180
       ttlSecondsAfterFinished: 300

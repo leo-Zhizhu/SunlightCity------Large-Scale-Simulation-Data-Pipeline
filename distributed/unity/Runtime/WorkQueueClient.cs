@@ -96,7 +96,7 @@ namespace SunlightCity.Distributed
                 // sorts. Small on purpose: work_mem is per sort node and the
                 // coordinator serves 50 clients.
                 "SET work_mem = '16MB';" +
-                // A claim that takes seconds means 50 workers are each waiting that
+                // A claim that takes seconds means 54 workers are each waiting that
                 // long. Failing fast surfaces it instead of hiding it as slow startup.
                 "SET statement_timeout = '30s';",
                 _conn))

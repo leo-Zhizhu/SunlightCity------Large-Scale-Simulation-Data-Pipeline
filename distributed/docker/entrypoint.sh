@@ -53,7 +53,7 @@ trap 'forward_signal INT'  INT
 # Checked here as well as in WorkerConfig.Validate() because failing in the shell
 # costs ~50 ms and produces a legible one-line error, whereas failing inside the
 # player costs a ~3 s engine boot and buries the message in Unity's log preamble.
-# At 50 pods x a misconfigured rollout that difference is very visible.
+# At 54 pods x a misconfigured rollout that difference is very visible.
 # -----------------------------------------------------------------------------
 : "${SUNLIT_RUN_ID:?SUNLIT_RUN_ID is required — the run whose tasks to claim. Set it in the Job spec.}"
 : "${SUNLIT_COORD_HOST:?SUNLIT_COORD_HOST is required — the control-plane instance (normally PgBouncer).}"
@@ -61,7 +61,7 @@ trap 'forward_signal INT'  INT
 
 # The SHARD endpoints are deliberately NOT checked here, and are not required env at
 # all: the worker reads them from the coordinator's meo_shards registry at boot, so
-# an instance can be replaced mid-run without redeploying 50 pods. Only the DNS
+# an instance can be replaced mid-run without redeploying 54 pods. Only the DNS
 # template is configured, and it has a sensible default in the image.
 
 # Pod name as worker id: already unique, and it lets a leased task be traced
@@ -71,7 +71,7 @@ export SUNLIT_WORKER_ID="${SUNLIT_WORKER_ID:-${HOSTNAME:-worker-$RANDOM}}"
 # -----------------------------------------------------------------------------
 # Wait for the database.
 #
-# On a cold cluster start, 50 workers and PgBouncer/Postgres come up
+# On a cold cluster start, 54 workers and PgBouncer/Postgres come up
 # concurrently. Without this, every worker crash-loops for the first minute and
 # Kubernetes applies exponential backoff — so the fleet takes far longer to
 # converge than the database took to become ready. Polling here is strictly

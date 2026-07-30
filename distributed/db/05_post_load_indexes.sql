@@ -1,7 +1,7 @@
 -- =============================================================================
 -- SunlightCity — reduce phase (phase 5 of 6)          ***  DATA SHARD ONLY  ***
 --
--- Run on EACH shard once its tasks have drained. The ten shards run this
+-- Run on EACH shard once its tasks have drained. The nine shards run this
 -- concurrently and independently — that is what makes the reduce phase ~2 minutes
 -- instead of ~20.
 --
@@ -203,7 +203,7 @@ COMMIT;
 -- CONCURRENTLY is not used: it is disallowed on partitioned tables, and would be
 -- the wrong choice anyway since nothing is reading this yet.
 --
--- Note the scale. This indexes 14.5 million rows per shard, not 789 million,
+-- Note the scale. This indexes 16.1 million rows per shard, not 876 million,
 -- because the sample table has no index at all. That asymmetry is why the reduce
 -- phase is seconds rather than hours.
 -- =============================================================================
@@ -235,7 +235,7 @@ CREATE INDEX IF NOT EXISTS idx_meo_exp_edges_p_section
 -- Not optional. The exposure leaves went from empty to ~10^8 rows with autovacuum
 -- switched off (see 04), so the planner's statistics still say "empty". Until
 -- ANALYZE runs, every query against them plans as though the tables were tiny and
--- picks catastrophically wrong plans — a nested loop over 789 million rows, for
+-- picks catastrophically wrong plans — a nested loop over 876 million rows, for
 -- instance.
 --
 -- ANALYZE here covers the derived table and the geometry. The 576 sample leaves
