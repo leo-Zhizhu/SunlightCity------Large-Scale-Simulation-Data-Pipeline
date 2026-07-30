@@ -17,15 +17,15 @@ workers and 11 PostgreSQL instances, in **11 min 38 s**.
 [![Unity](https://img.shields.io/badge/Unity-2022.3_LTS-000000?logo=unity&logoColor=white)](https://unity.com/)
 [![Headless](https://img.shields.io/badge/build-headless_Linux_IL2CPP-222?logo=linux&logoColor=white)](distributed/unity/Editor/HeadlessBuildScript.cs)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-50_workers-326CE5?logo=kubernetes&logoColor=white)](distributed/k8s/)
-[![PostGIS](https://img.shields.io/badge/PostGIS-11_instance_cluster-336791?logo=postgresql&logoColor=white)](distributed/db/)
+[![PostGIS](https://img.shields.io/badge/PostGIS-10_instance_cluster-336791?logo=postgresql&logoColor=white)](distributed/db/)
 [![Self-test](https://img.shields.io/badge/schema_self--test-45_assertions-0ca30c?logo=postgresql&logoColor=white)](distributed/db/tests/)
 
 <br>
 
 <table>
 <tr>
-<td align="center" width="25%"><h3>155×</h3><sub><b>work-normalised</b><br>v1 needs 30 h for<br>the same 60 dates</sub></td>
-<td align="center" width="25%"><h3>6.1×</h3><sub><b>from the DB cluster alone</b><br>50 workers on 1 instance: 1.2 h<br>on 10: 11 m 38 s</sub></td>
+<td align="center" width="25%"><h3>11m 09s</h3><sub><b>for 7.89 billion rows</b><br>a 15-minute deadline,<br>with 26% in hand</sub></td>
+<td align="center" width="25%"><h3>6.4×</h3><sub><b>from the DB cluster alone</b><br>54 workers on 1 instance: 1.2 h<br>on 9: 11 m 09 s</sub></td>
 <td align="center" width="25%"><h3>~0</h3><sub><b>WAL for a 500 GB load</b><br>create-then-attach<br>+ <code>wal_level=minimal</code></sub></td>
 <td align="center" width="25%"><h3>0</h3><sub><b>coordinators</b><br>an unrenewed lease<br>is the failure signal</sub></td>
 </tr>
@@ -186,42 +186,121 @@ python "Python & DB Scripts/Database/test_connection.py"
 
 # v2 · the distributed pipeline
 
-Same simulation. Same rows. 50 workers and 11 PostgreSQL instances.
+Same simulation. Same rows. 54 workers and 10 PostgreSQL instances — both numbers
+**derived** from a 15-minute deadline rather than chosen. The derivation is executable:
+`python distributed/orchestrator/model.py --derive`.
 
 **Full detail: [ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
 [DB_CLUSTER.md](docs/DB_CLUSTER.md) · [OPTIMIZATION.md](docs/OPTIMIZATION.md) ·
 [PERFORMANCE.md](docs/PERFORMANCE.md)**
+
+## 0 · How much hardware, and why exactly that much
+
+The work is fixed: 7,886,872,800 observations at v1's exact schema, nothing aggregated
+away. The **deadline** is fixed too — a full 60-date run in under 15 minutes. Neither the
+fleet size nor the instance count is given; both are derived from those two facts.
+
+Nine benchmarks, each isolating one lever, compose into a single expression:
+
+```
+T(W,S)  =   45   +   max( 26,667/W , 3,286/S )   +   898/S + 30
+            ^B8          ^B1-B3      ^B4-B5           ^B6-B7  ^B9
+            spin-up      raycast     write            reduce
+                         \____ overlap: max() ____/
+```
+
+**75 seconds of that is irreducible.** Spin-up and `ANALYZE` shrink with neither workers
+nor shards, so no configuration at any price beats 75 s — and the sizing problem is
+spending the remaining 825 s well.
+
+Search every integer `(W, S)` against the deadline and the cheapest answer is **40 workers
+/ 6 shards at 14m 51s** — a 1.0% margin. It is not deployable, and the figure below is why:
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/stress_envelope_dark.svg">
+  <img src="docs/assets/stress_envelope_light.svg" alt="Four stress conditions for 40 workers over 6 shards and for 54 over 9. The cheapest deadline-meeting shape fails three of the four; the deployed shape passes all four." width="880">
+</picture>
+</div>
+
+So the shape must hold 15 minutes under **five** conditions, not one — three deadlines and
+two structural:
+
+| | condition | why it exists |
+|---|---|---|
+| 1 | nominal | the headline |
+| 2 | every rate 15% below bench | not a failure scenario — the possibility the model is simply optimistic, which does not clear up |
+| 3 | that world, minus one instance and 10% of the fleet | failures happen in the pessimistic world too, and this conjunction is what an SLO has to survive |
+| 4 | still compute-bound with headroom at `S−1` | "the fleet never waits on the database" is not a claim about healthy clusters only |
+| 5 | every shard offered all 12 `COPY` streams it sustains | nine instances fed ten streams each is capacity bought and unused |
+
+**4,981 shapes meet the three deadlines. Only 448 meet all five.**
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/feasibility_map_dark.svg">
+  <img src="docs/assets/feasibility_map_light.svg" alt="Grid of workers against shards in three nested regions: shapes that miss 15 minutes, shapes that meet it nominally, and the much smaller set surviving the stress envelope, running along the diagonal where workers equal six times shards." width="900">
+</picture>
+</div>
+
+The cost band is flat to a few percent, so **cost does not pick the winner — the two
+structural conditions do.** Requiring survival of an instance loss eliminates every
+8-shard shape; requiring saturation eliminates 53/9, which buys nine instances and feeds
+each of them ten streams out of twelve.
+
+The answer is **54 workers and 9 data shards** — 588 vCPU, 2,050 GB, **11m 09s** nominal
+with 26% in hand, and 14m 34s under all three stresses at once. `W = 6S` exactly, which is
+why the queue's admission arithmetic comes out even: 9 shards × 6 slots = 54 workers.
+
+And there is **no knee** to have found instead. The cost/time frontier decays as `W⁻²`,
+smoothly, with no inflection anywhere:
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cost_time_dark.svg">
+  <img src="docs/assets/cost_time_light.svg" alt="Cost against time Pareto frontier. Marginal return falls from 168 seconds per 100 vCPU to 31 seconds with no inflection point, asymptoting at the 75-second floor." width="880">
+</picture>
+</div>
+
+168 s per extra 100 vCPU at 470 vCPU, 58 s at 780, 31 s at 1,140. "Diminishing returns"
+cannot select a point on that curve, and did not. The deadline did.
+
+**The whole argument, executable:** `python distributed/orchestrator/model.py --derive` ·
+**in prose:** [PERFORMANCE.md §1–§6](docs/PERFORMANCE.md#1-the-requirement)
+
+---
 
 ## 1 · The bottleneck was never the raycasting
 
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/shard_scaling_dark.svg">
-  <img src="docs/assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 1 hour 11 minutes, ten take 3 minutes 20 seconds" width="850">
+  <img src="docs/assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 54 workers: one instance takes 1 hour 11 minutes, nine take 11 minutes 9 seconds" width="850">
 </picture>
 </div>
 
 A `COPY` backend is **one busy CPU**, so a 16 vCPU instance sustains ~12 productive
-streams — 2.4M rows/s — while a 50-worker fleet produces **14.8M rows/s**. Six sevenths
+streams — 2.4M rows/s — while a 54-worker fleet produces **15.97M rows/s**. Six sevenths
 of the fleet would sit waiting.
 
 | shards | wall clock | vs v1 | bound by |
 |---:|---:|---:|---|
 | 1 | 1.18 h | 25.4× | I/O |
-| 4 | 4m 44s | 76.0× | I/O |
-| 8 | 3m 24s | 105.8× | compute |
-| **10** | **11m 38s** | **154.7×** | **compute** |
-| 20 | 3m 11s | 113.3× | compute |
-| 30 | 3m 32s | 101.7× | I/O again |
+| 4 | 18m 41s | 96.3× | I/O |
+| 8 | 11m 21s | 158.6× | compute |
+| **9** | **11m 09s** | **161.5×** | **compute** |
+| 20 | 10m 14s | 176.0× | compute |
+| 30 | 12m 42s | 141.7× | I/O again |
 
-**The cluster is worth 6.1× of the 155× total.** The other 4.05× is per-worker
-([§3](#3--the-work-inside-one-worker)); 50 pods multiply it. Neither half alone gets
+**The cluster is worth 6.4× of the 161× total.** The other 4.05× is per-worker
+([§3](#3--the-work-inside-one-worker)); 54 pods multiply it. Neither half alone gets
 close, and **adding workers alone would have bought almost none of it.**
 
-Ten is deliberate, not maximal: the minimum is seven, and ten gives **+35% ingest
-headroom** so a checkpoint or an autovacuum on one instance cannot stall the fleet.
-Twenty buys nine seconds for double the spend. **Past ~25 it gets worse** — fifty workers
-cannot offer enough concurrent streams to keep that many instances busy, so each starves.
+Nine is derived, not maximal: the bare minimum is seven, and nine gives **+35% ingest
+headroom**, keeps all 12 streams per instance in use, and stays compute-bound after losing
+an instance outright. Twenty buys 55 seconds for double the spend. **Past ~27 it gets
+worse** — 54 workers cannot offer enough concurrent streams to keep that many instances
+busy, so each starves.
 
 Every figure here is `python distributed/orchestrator/model.py`, which is also what the
 docs, the charts and `reduce_finalize.py` read, so none of them can drift.
@@ -338,7 +417,7 @@ and all the load-time maintenance. **Pruning is the index.**
 > `wal_level = minimal` for volume, `max_wal_size` **raised** for checkpoint frequency.
 > Full risk ledger: **[TUNING.md](docs/TUNING.md)**.
 
-## 5 · Coordinating 50 workers with 10 instances
+## 5 · Coordinating 54 workers with 9 instances
 
 One predicate. A shard absorbs ~12 streams and each worker holds two, so at most six
 workers should write to any one shard at a time — and nothing about the work distribution
@@ -427,25 +506,34 @@ check.
 
 <div align="center">
 
-| | v1 · one desktop | v2 · 50 workers, 11 instances |
+| | v1 · one desktop | v2 · 54 workers, 10 instances |
 |---|---:|---:|
 | dates covered | 12 | **60** |
 | rows written | 1,577,374,560 | **7,886,872,800** |
 | raycasts fired | 990,240,696 | 4,952,298,879 |
-| **wall clock** | **6 h 00 min** | **11 min 38 s** |
-| raycast rate | 73,027 / s | 14,787,900 / s |
+| **wall clock** | **6 h 00 min** | **11 min 09 s** |
+| row rate | 73,027 / s | 15,970,917 / s |
 | per worker | 73,027 / s | 295,758 / s |
 | sample storage | 110 GB (2 inline indexes) | 499 GB (no index) |
 | WAL for the sample load | ~110 GB | **~0** |
 | failure recovery | restart the export | per-task, automatic |
-| infrastructure | one desktop | 572 vCPU / 2,114 GB |
-| cost | 6 desktop-hours | **~111 vCPU-hours** |
+| infrastructure | one desktop | 588 vCPU / 2,050 GB |
+| cost | 6 desktop-hours | **~109 vCPU-hours** |
 
 </div>
 
-Decomposed honestly: `50 workers × 3.0 batching × 1.35 locality = 202.5×` raw ceiling,
-**154.7× achieved** — 53% efficiency, and the missing 47% is the 45 s fleet spin-up (23%
-of wall clock, counted rather than waved away) plus the 2 min reduce.
+Decomposed honestly: `54 workers × 3.0 batching × 1.35 locality = 218.7×` raw ceiling,
+**161.5× achieved** — 74% efficiency, and the missing 26% is the 45 s fleet spin-up plus
+the 2m 10s reduce. Both are counted rather than waved away: together they are a **75-second
+floor that no amount of hardware beats**, which is why the sizing problem is spending the
+other 825 seconds of the budget well.
+
+The hardware is not a guess. Given the deadline, `model.py --derive` searches every integer
+(workers, shards) pair against five conditions — three deadlines under stress, two
+structural — and returns 54/9 as the cheapest that satisfies all of them. The cheapest
+shape that merely meets 15 minutes on paper is 40/6, and losing one database instance puts
+it over. **[PERFORMANCE.md §1–§6](docs/PERFORMANCE.md#1-the-requirement)** is the argument
+in full.
 
 **Scene:** 4,168 waypoints · 6,700 edges · 365,133 sample points at 2 m spacing ·
 1,280,954 tree canopies · 525,600 minute-resolution solar positions per year ·
@@ -462,7 +550,7 @@ Full breakdown and sensitivity: **[PERFORMANCE.md](docs/PERFORMANCE.md)**.
 ├── docs/
 │   ├── V1_PIPELINE.md      ◀── v1 in full: mesh → graph → schema → 6-hour sweep
 │   ├── ARCHITECTURE.md         why v2 is shaped this way
-│   ├── DB_CLUSTER.md           the 11 instances: sizing, topology, operations
+│   ├── DB_CLUSTER.md           the 10 instances: sizing, topology, operations
 │   ├── OPTIMIZATION.md         every low-level change, with how to verify it
 │   ├── PERFORMANCE.md          the numbers, and what the model omits
 │   ├── TUNING.md               three PostgreSQL profiles and the risk ledger
@@ -495,7 +583,7 @@ Full breakdown and sensitivity: **[PERFORMANCE.md](docs/PERFORMANCE.md)**.
 │   ├── orchestrator/
 │   │   ├── model.py                 ◀── the source of every figure in these docs
 │   │   ├── cluster.py                  Hilbert order + exact balanced cut
-│   │   ├── apply_schema.py             6 files → 2 roles → 11 instances
+│   │   ├── apply_schema.py             6 files → 2 roles → 10 instances
 │   │   ├── plan_tasks.py               topology, provisioning, the queue
 │   │   ├── monitor.py                  live dashboard + lease reaper
 │   │   ├── reduce_finalize.py          shard fan-out, verification, federation
@@ -578,7 +666,7 @@ Stated plainly, because they are visible in the published data.
   ingest rate are the model's inputs. `reduce_finalize.py` prints achieved against
   modelled at the end of every run so the first real deployment replaces them. What the
   model omits, and in which direction it errs, is in
-  [PERFORMANCE.md §8](docs/PERFORMANCE.md#8-what-the-model-omits-and-which-way-it-errs).
+  [PERFORMANCE.md §8](docs/PERFORMANCE.md#13-what-the-model-omits-and-which-way-it-errs).
 
 ---
 

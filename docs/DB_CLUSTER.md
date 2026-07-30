@@ -81,7 +81,7 @@ instances busy, so each one starves.
 
 ```
                         ┌───────────────────┐
-      50 workers  ──────│    PgBouncer      │──────┐   control plane only
+      54 workers  ──────│    PgBouncer      │──────┐   control plane only
       (claim,           │  transaction mode │      │   thousands of tiny txns
        heartbeat,       │    2 replicas     │      │
        complete)       └───────────────────┘      │
@@ -99,7 +99,7 @@ instances busy, so each one starves.
                                         │  postgres_fdw ───────┼──┐ analytics
                                         └──────────────────────┘  │
                                                                   │
-      50 workers  ─────────── DIRECT, no pooler ──────────┐       │
+      54 workers  ─────────── DIRECT, no pooler ──────────┐       │
       (binary COPY, 2 streams each)                       │       │
                                                           ▼       ▼
    ┌──────────────┬──────────────┬─────────────────────────────────────────┐
@@ -108,7 +108,7 @@ instances busy, so each one starves.
    │ 128 GB       │              │   ~8 sections each, Hilbert-contiguous   │
    │ 256 GB NVMe  │              │                                          │
    │              │              │                                          │
-   │ ~50 GB samples in 3,024 leaves                                           │
+   │ ~56 GB samples in 3,360 leaves                                           │
    │ ~0.2 GB derived edge index                                             │
    │ full static geometry replica (~140 MB)                                 │
    └──────────────┴──────────────┴─────────────────────────────────────────┘
@@ -222,11 +222,11 @@ it away — see [TUNING.md](TUNING.md#the-safety-argument-stated-plainly).
 
 ### Why 128 GB per shard
 
-A shard holds ~50 GB of samples. 128 GB means the instance's entire slice of the dataset
-sits in its page cache, so the reduce phase's aggregate over 789 million rows never
+A shard holds ~56 GB of samples. 128 GB means the instance's entire slice of the dataset
+sits in its page cache, so the reduce phase's aggregate over 876 million rows never
 touches disk, and after a warm-up pass routing queries do not either.
 
-That is also why the whole run costs only ~111 vCPU-hours despite 572 vCPU: the hardware
+That is also why the whole run costs only ~109 vCPU-hours despite 588 vCPU: the hardware
 is wide, not held for long.
 
 ### Why no pooler in front of the shards
@@ -306,10 +306,10 @@ meo_exposure_samples_p                      partitioned, LIST (section_id)
 │  │  … 60 dates x 6 windows = 360 leaves
 ├─ meo_exp_s385
 │  … 
-└─ ~3,024 leaves total, ~50 GB
+└─ ~3,360 leaves total, ~56 GB
 
 meo_exposure_edges_p                        partitioned, RANGE (datetime), monthly
-└─ 12 partitions/year, ~14.5M rows, ~1.6 GB   ← DERIVED in the reduce phase
+└─ 12 partitions/year, ~16.1M rows, ~1.7 GB   ← DERIVED in the reduce phase
 
 meo_sample_points, meo_edges, meo_waypoints  full replicas, ~140 MB
 meo_edge_sections                            full map, 6,700 rows
@@ -325,7 +325,7 @@ trip, and moving a section between shards moves exposure rows only, never geomet
 column sets, in v1's order, so every v1 consumer works unchanged. That is asserted in
 the self-test rather than assumed.
 
-**3,024 leaves per shard** is comfortable for query planning. Cluster-wide there are
+**3,360 leaves per shard** is comfortable for query planning. Cluster-wide there are
 30,240, but no instance plans over more than its own.
 
 ---
@@ -458,7 +458,7 @@ SELECT * FROM meo_shard_progress WHERE run_id = 'run-2026-annual';
 ### Replacing an instance mid-run
 
 Workers resolve shard endpoints from `meo_shards` at boot, not from environment, which
-is what makes this possible without redeploying 50 pods:
+is what makes this possible without redeploying 54 pods:
 
 ```sql
 -- stop dispatching to it; tasks in flight finish rather than failing
@@ -480,7 +480,7 @@ knew.
 
 ### Losing a shard entirely
 
-Its ~50 GB is reproducible from (mesh, ephemeris, section, date, window). Reset its
+Its ~56 GB is reproducible from (mesh, ephemeris, section, date, window). Reset its
 tasks and let the fleet redo them:
 
 ```sql
@@ -488,7 +488,7 @@ UPDATE meo_tasks SET state = 'pending', attempts = 0, worker_id = NULL
  WHERE run_id = 'run-2026-annual' AND shard_index = 3;
 ```
 
-That is ~605 tasks — about 20 seconds of fleet time. Which is the whole reason the bulk
+That is ~3,360 tasks — under a minute of fleet time. Which is the whole reason the bulk
 profile is allowed to trade durability for throughput.
 
 ---
@@ -497,16 +497,20 @@ profile is allowed to trade durability for throughput.
 
 | | count | each | total |
 |---|---:|---|---|
-| map workers | 50 | 8 vCPU / 16 GB | 400 vCPU / 800 GB |
-| data shards | 10 | 16 vCPU / 128 GB / 256 GB NVMe | 160 vCPU / 1280 GB / 2.5 TB |
+| map workers | 54 | 8 vCPU / 16 GB | 432 vCPU / 864 GB |
+| data shards | 9 | 16 vCPU / 128 GB / 256 GB NVMe | 144 vCPU / 1152 GB / 2.3 TB |
 | coordinator | 1 | 8 vCPU / 32 GB | 8 vCPU / 32 GB |
 | PgBouncer | 2 | 2 vCPU / 1 GB | 4 vCPU / 2 GB |
-| | | | **572 vCPU / 2114 GB** |
+| | | | **588 vCPU / 2050 GB** |
 
-**~111 vCPU-hours** for a full annual run. Wide, not long.
+**~109 vCPU-hours** for a full annual run. Wide, not long.
+
+Both counts are derived from the 15-minute deadline rather than chosen — see
+[PERFORMANCE.md §1–§6](PERFORMANCE.md#1-the-requirement) for the argument and
+`model.py --derive` for the executable version.
 
 The shards are most of the RAM, deliberately — see §2. If that is not available, the
-model degrades gracefully: `model.py --sweep` shows four shards still reaching 76×, and
+model degrades gracefully: `model.py --sweep` shows four shards still reaching 96×, and
 `pg_tune.py` will size a smaller instance correctly and warn if the fleet will be
 waiting on it.
 

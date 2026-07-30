@@ -297,8 +297,9 @@ class Topology:
         that boundary stays on one instance.
 
         A pure hash gives ~1/k (0.11 at the deployed k=9). Contiguous Hilbert runs
-        over the Manhattan strip give 0.70, and it RISES as k falls — fewer, longer
-        runs mean fewer boundaries. That is the read-side reason not to over-shard.
+        give ~0.66, and it RISES as k falls — fewer, longer runs mean fewer
+        boundaries. That is the read-side reason not to over-shard, and it is
+        independent of the write-throughput argument that sets the lower bound.
         """
         by_cell = {(s.col, s.row): s.shard_index for s in self.sections}
         same = total = 0

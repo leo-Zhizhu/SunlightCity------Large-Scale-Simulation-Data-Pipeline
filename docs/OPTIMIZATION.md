@@ -335,7 +335,7 @@ rather than appended to.
 
 Indexes on the *derived* edge table are built after the load, where they cost one large
 sequential sort bounded by `maintenance_work_mem` instead of a billion random descents —
-and over 14.5M rows per shard rather than 789M.
+and over 16.1M rows per shard rather than 876M.
 
 ## 12 & 13. `fillfactor`, both directions
 
