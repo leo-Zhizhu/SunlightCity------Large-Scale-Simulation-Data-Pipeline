@@ -55,7 +55,7 @@ of a property of this specific workload:
 > of (city mesh, solar ephemeris, section, date, window); the coordinator's work queue
 > records exactly which tasks completed; a lost task simply re-runs. Losing a shard to a
 > power cut costs wall-clock time, not information — about 100 seconds of fleet time for
-> one instance's 3,024 tasks.
+> one instance's 3,360 tasks.
 
 Apply the bulk profile to a database where that is not true and you are simply running an
 unsafe database.
@@ -140,13 +140,13 @@ keep checkpoints RARE       →   max_wal_size = 32GB      (RAISE this one)
 ```
 
 `pg_tune.py` scales it from the streams arriving at **that instance** — ten, not fifty.
-Sizing it from the fleet was a real error in an earlier version: 50 workers only ever
+Sizing it from the fleet was a real error in an earlier version: 54 workers only ever
 produce ten connections to any one shard, so deriving anything per-shard from the fleet
 size was wrong by an order of magnitude. The same correction applies to `work_mem` and
 `max_connections`.
 
 What `max_wal_size` actually has to absorb here is *not* the sample load (which emits
-almost no WAL) but the reduce phase's edge rollup — a fully-logged `INSERT` of ~14.5M
+almost no WAL) but the reduce phase's edge rollup — a fully-logged `INSERT` of ~16.1M
 rows per shard — plus its indexes.
 
 ---
@@ -215,7 +215,7 @@ The 25% is a **hard ceiling, never overridden**:
 | setting | shard bulk | shard serving | coordinator | why |
 |---|---|---|---|---|
 | `shared_buffers` | 16 GB | 16 GB | 8 GB | 25% of RAM, capped. Larger is **not** better for writes: PostgreSQL still leans on the OS page cache, and an oversized pool lengthens checkpoint scans and enlarges each checkpoint's dirty set. |
-| `effective_cache_size` | 96 GB | 96 GB | 24 GB | A shard's whole ~50 GB slice fits here many times over, which is why the reduce phase's aggregate never touches disk. |
+| `effective_cache_size` | 96 GB | 96 GB | 24 GB | A shard's whole ~56 GB slice fits here many times over, which is why the reduce phase's aggregate never touches disk. |
 | `work_mem` | 256 MB | 64 MB | 32 MB | Reduced 4× for serving (many small queries, not a few huge sorts) and again for the coordinator (single-row lookups). |
 | `maintenance_work_mem` | 16 GB | 2 GB | 1 GB | The single largest lever on post-load index-build time, and during the load nothing else on the instance wants memory. |
 | `huge_pages` | `try` | `try` | `try` | A 16 GB pool through 4 KB pages needs 4M page-table entries; 2 MB pages cut that to 8,192. `try` so startup survives a host with none reserved — but reserve them and check `SHOW huge_pages_status` says `on`. |
@@ -248,7 +248,7 @@ meo_tasks: fillfactor = 70, thresholds absolute (50 rows)
 
 `meo_tasks` is a few thousand rows taking ~42 `UPDATE`s each — one claim, ~40 heartbeats,
 one completion — so ~250,000 row versions over a run. Left at defaults it bloats within
-minutes, its partial indexes degrade, and claim latency, which all 50 workers wait on,
+minutes, its partial indexes degrade, and claim latency, which all 54 workers wait on,
 becomes visible.
 
 `fillfactor = 70` is the single most effective setting there: leaving room on the page
@@ -286,7 +286,7 @@ Building afterwards instead:
 - yields a **dense, unfragmented** tree instead of one ~70% full from splits.
 
 **And the scale is different from what you might expect.** The reduce phase indexes 2.9
-million rows per shard, not 789 million, because the sample table gets **no index at
+million rows per shard, not 876 million, because the sample table gets **no index at
 all** — partition pruning reaches one ~261k-row leaf, which is cheaper to scan than a
 B-tree descent over 7.89e9 entries, and not building one saves ~300 GB. That asymmetry is
 why the reduce phase is seconds rather than hours. See
@@ -300,9 +300,9 @@ wrong choice anyway since nothing is reading yet.
 The leaves went from empty to ~10⁸ rows with autovacuum held away from them, so the
 planner's statistics still say "empty". Until `ANALYZE` runs, every query against them
 plans as though the tables were tiny and picks catastrophically wrong plans — a nested
-loop over 789 million rows, for instance.
+loop over 876 million rows, for instance.
 
-`reduce_finalize.py` runs it per shard. For the 3,024 leaves, `vacuumdb --analyze --jobs 8`
+`reduce_finalize.py` runs it per shard. For the 3,360 leaves, `vacuumdb --analyze --jobs 8`
 is ~8× faster than doing them serially from one session.
 
 ---

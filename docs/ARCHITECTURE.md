@@ -42,42 +42,69 @@ for a Pareto search's coarse objective, incapable of the directional query — a
 
 So the row count stands, and the real problem appears:
 
-**One PostgreSQL instance cannot absorb 7.89 billion rows from 50 concurrent
+**One PostgreSQL instance cannot absorb 7.89 billion rows from 54 concurrent
 producers.** A COPY backend is one busy CPU, so a 16 vCPU instance sustains about
-twelve productive streams — ~2.4M rows/s — while a 50-worker fleet produces 14.8M
+twelve productive streams — ~2.4M rows/s — while a 54-worker fleet produces 15.97M
 rows/s. Six sevenths of the fleet would sit waiting.
 
-Adding workers alone would have bought almost nothing.
+Adding workers alone would have bought almost nothing — and not asymptotically, but
+absolutely. Every curve below is a fixed shard count, and each one flattens at *its*
+ingest ceiling rather than at anything to do with the fleet:
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/worker_ceiling_dark.svg">
+  <img src="assets/worker_ceiling_light.svg" alt="Wall clock against fleet size for 4, 6, 9 and 14 shards. Every curve flattens at its own database ingest ceiling; the four-shard curve flattens above the 15-minute deadline and never crosses it." width="880">
+</picture>
+</div>
+
+**Four shards cannot meet the deadline with any fleet at all.** That curve levels off at
+18m 41s and stays there however many pods are added; two shards levels off at 36m 07s.
+Past the ceiling each additional worker raycasts into a queue.
+
+Where the two rates come from, and the gap between them:
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench_ladder_dark.svg">
+  <img src="assets/bench_ladder_light.svg" alt="Two throughput chains built from individual benchmarks: the fleet produces 15.97M rows per second and the cluster absorbs 21.6M, a 35% headroom." width="880">
+</picture>
+</div>
+
+One instance sustains `2,400,000 / 295,758 = 8.11` workers' output, so at two `COPY`
+streams per worker it feeds **six**. That single ratio is where `W = 6S` comes from, and
+with it the entire deployment shape — see
+[PERFORMANCE.md §2](PERFORMANCE.md#2-step-1--the-measurement-ladder).
 
 ---
 
 ## 2. What the cluster is worth
 
-Workers held fixed at 50; only the number of database instances varies.
+Workers held fixed at 54; only the number of database instances varies.
 
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/shard_scaling_dark.svg">
-  <img src="assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 50 workers: one instance takes 1 hour 11 minutes, ten take 3 minutes 20 seconds" width="850">
+  <img src="assets/shard_scaling_light.svg" alt="Wall clock against shard count at fixed 54 workers: one instance takes 1 hour 11 minutes, nine take 11 minutes 9 seconds" width="850">
 </picture>
 </div>
 
 | shards | wall clock | vs v1 | bound by |
 |---:|---:|---:|---|
 | 1 | 1.18 h | 25.4× | I/O |
-| 4 | 4m 44s | 76.0× | I/O |
-| 8 | 3m 24s | 105.8× | compute |
-| **10** | **11m 38s** | **154.7×** | **compute** |
-| 20 | 3m 11s | 113.3× | compute |
-| 30 | 3m 32s | 101.7× | I/O again |
+| 4 | 18m 41s | 96.3× | I/O |
+| 8 | 11m 21s | 158.6× | compute |
+| **9** | **11m 09s** | **161.5×** | **compute** |
+| 20 | 10m 14s | 176.0× | compute |
+| 30 | 12m 42s | 141.7× | I/O again |
 
 Three things to take from that table.
 
-**The cluster is worth 6.1× of the 155× total.** The remaining 4.05× per worker comes
-from batched raycasts and BVH locality ([OPTIMIZATION.md](OPTIMIZATION.md)); 50 pods
+**The cluster is worth 6.4× of the 161× total.** The remaining 4.05× per worker comes
+from batched raycasts and BVH locality ([OPTIMIZATION.md](OPTIMIZATION.md)); 54 pods
 multiply it. Neither half alone gets close.
 
-**Ten is deliberate, not maximal.** The minimum for this fleet is seven; ten gives
+**Nine is derived, not maximal.** The bare minimum for this fleet is seven; nine gives
 **+35% ingest headroom**, so a checkpoint or an autovacuum on one instance cannot stall
 the fleet. Twenty would buy nine seconds for double the database spend.
 
@@ -248,7 +275,9 @@ So `meo_claim_task()` refuses to hand out a task whose shard is already at capac
 AND t.shard_index = ANY (SELECT meo_admissible_shards(run_id))
 ```
 
-At the deployed shape (10 shards × 6 = 60 slots for 50 workers) it never binds. Under
+At the deployed shape it is exact — 9 shards × 6 = 54 slots for 54 workers, because the
+fleet size was derived as 6 × the shard count ([PERFORMANCE.md §2](PERFORMANCE.md#2-step-1--the-measurement-ladder)).
+So it never binds at full health. Under
 skew it is what keeps the cluster's aggregate ingest flat rather than concentrated.
 
 Two more concerns share the same function, in priority order:
@@ -338,8 +367,8 @@ and the main loop reaps completions separately from producing them.
 |---|---:|---:|---|
 | fleet spin-up | 45 s | 23% | image pull (warm) + engine boot + scene load + BVH warm |
 | **map** | **8m 53s** | **53%** | `max(raycast 8m 53s, write 6m 34s)` — compute-bound |
-| reduce | 2m 00s | 17% | ten shards in parallel |
-| **total** | **11m 38s** | | **155× v1** |
+| reduce | 2m 10s | 19% | nine shards in parallel |
+| **total** | **11m 09s** | | **161× v1** |
 
 **Writing is free.** The map phase costs `max(raycast, write)`, not their sum, because
 a finished window is handed to a writer thread on a second connection while the main
@@ -351,7 +380,7 @@ clock, and pretending otherwise would make the model wrong in the one direction 
 flatters it.
 
 **Reduce cannot overlap** — it needs the last row — but it is only 2 min because a
-section owns whole edges, so all ten shards roll up locally with no shuffle.
+section owns whole edges, so all nine shards roll up locally with no shuffle.
 
 Full numbers, including the honest accounting of the 155× against a 202× theoretical
 ceiling: [PERFORMANCE.md](PERFORMANCE.md).
@@ -377,7 +406,7 @@ SELECT * FROM meo_edge_directional_cost(:edge_id, :entry_time, :reverse, :walk_s
 ```
 
 **Analytics** — "sunlit fraction of every street at 11:00 in July" — is rare and
-genuinely spans the city, so one SQL statement over all ten shards is what you want.
+genuinely spans the city, so one SQL statement over all nine shards is what you want.
 That is `postgres_fdw`, and the two relevant optimisations are complementary but never
 both on one plan node: an aggregate gets **partitionwise pushdown** (each shard returns
 one row), a row-returning query gets **Async Foreign Scan** (the ten reads run
@@ -408,7 +437,7 @@ sustained bulk byte stream, where it would be a single-threaded proxy relaying
 | Per-shard rollup, integrity views | [`05_post_load_indexes.sql`](../distributed/db/05_post_load_indexes.sql) |
 | Balanced cut, endpoint resolution | [`cluster.py`](../distributed/orchestrator/cluster.py) |
 | Sizing — the source of every figure | [`model.py`](../distributed/orchestrator/model.py) |
-| Schema bootstrap across 11 instances | [`apply_schema.py`](../distributed/orchestrator/apply_schema.py) |
+| Schema bootstrap across 10 instances | [`apply_schema.py`](../distributed/orchestrator/apply_schema.py) |
 | Topology derivation + provisioning | [`plan_tasks.py`](../distributed/orchestrator/plan_tasks.py) |
 | Shard fan-out, completeness, federation | [`reduce_finalize.py`](../distributed/orchestrator/reduce_finalize.py) |
 

@@ -43,7 +43,7 @@ runs in 11 min 38 s.
 | Nodes | 11 × 16 vCPU / 128 Gi with local NVMe | for the databases |
 | Nodes | 50 × 8 vCPU / 16 Gi | for the workers; spot is a good fit |
 
-Total footprint **572 vCPU / 2,114 Gi**. If that is not available, see
+Total footprint **588 vCPU / 2,050 Gi**. If that is not available, see
 [§11 running smaller](#running-smaller) — a four-shard cluster still reaches 76×.
 
 Storage class matters more than usual: the shards want **local NVMe**. Network-attached
@@ -118,7 +118,7 @@ they are not already there.
 
 ### 2a. The worker (needs a Unity licence)
 
-Two stages, because the Editor image is ~10 GB and must not ship to 50 pods.
+Two stages, because the Editor image is ~10 GB and must not ship to 54 pods.
 
 ```bash
 cd ~/SunlightCityUnityProject
@@ -211,7 +211,7 @@ kubectl -n sunlightcity rollout status deploy/pgbouncer
 > kubectl -n sunlightcity exec sunlit-coordinator-0 -- \
 >   psql -U admin -d sunlit_coord -tAc "select current_database()"
 > ```
-> All ten shards must return `sunlit_shard_<i>`. If one returns nothing, its `initdb`
+> All nine shards must return `sunlit_shard_<i>`. If one returns nothing, its `initdb`
 > hook did not run — see [§11](#11-troubleshooting).
 
 ### 3a. Mount the real tuning profiles
@@ -466,11 +466,11 @@ The report ends with the numbers to compare against [PERFORMANCE.md](PERFORMANCE
 
 ```
   map wall clock  : 0:01:47
-  reduce          : 0:00:48  (10 shards in parallel)
+  reduce          : 0:02:10  (9 shards in parallel)
   total           : 0:02:35
   throughput      : 14.7M raycasts/s
   per worker      : 294K/s  (v1 single-thread baseline 73K/s)
-  vs v1 end-to-end: 154.7x  (model predicts 154.7x)
+  vs v1 end-to-end: 161.5x  (model predicts 161.5x)
 ```
 
 > ✅ **Check:**
@@ -600,7 +600,7 @@ SELECT * FROM meo_network_snapshot('2026-07-15 11:00:00');
 UPDATE meo_tasks SET state='pending', attempts=0, worker_id=NULL
  WHERE run_id='run-2026-annual' AND state='failed';
 
--- discard and redo everything on one shard (~605 tasks, ~20 s of fleet time)
+-- discard and redo everything on one shard (~3,360 tasks, ~1 min of fleet time)
 UPDATE meo_tasks SET state='pending', attempts=0, worker_id=NULL
  WHERE run_id='run-2026-annual' AND shard_index=3;
 
@@ -654,7 +654,7 @@ kubectl delete namespace sunlightcity
 
 ## 13. Cost
 
-At 572 vCPU for ~12 minutes including spin-up, an annual run is **~111 vCPU-hours**.
+At 588 vCPU for ~11 minutes including spin-up, an annual run is **~109 vCPU-hours**.
 
 The map workers are an unusually good fit for **spot/preemptible** instances:
 lease-based recovery means a reclaimed task costs at most one task's work, and the
