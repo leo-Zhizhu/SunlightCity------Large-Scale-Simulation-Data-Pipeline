@@ -13,7 +13,7 @@
 #
 #   2. plan_tasks.py --provision
 #      Derives the section grid, assigns edges to sections by midpoint, cuts the
-#      Hilbert-ordered sections into ten balanced runs, registers the shards,
+#      Hilbert-ordered sections into nine balanced runs, registers the shards,
 #      replicates the static geometry to each by binary COPY, provisions the section
 #      parents and edge partitions, and fills the queue.
 #
@@ -45,7 +45,7 @@ spec:
   # (unreachable shard, missing geometry) that retrying will not fix. Fail fast.
   backoffLimit: 3
 
-  # Geometry replication moves ~140 MB to each of ten shards. Generous, because a
+  # Geometry replication moves ~140 MB to each of nine shards. Generous, because a
   # slow network here is annoying rather than a bug.
   activeDeadlineSeconds: 3600
   ttlSecondsAfterFinished: 86400   # keep a day: this pod's log is the plan
@@ -99,7 +99,7 @@ spec:
             # sanity-check the shard count against the model's minimum and to warn if
             # the fleet will be waiting on I/O.
             - name: SUNLIT_WORKER_COUNT
-              value: "50"
+              value: "54"
             # Schema and planning talk to PostgreSQL DIRECTLY, bypassing PgBouncer.
             # Deliberate: these are long, session-affine operations (CREATE TABLE,
             # binary COPY of 140 MB per shard) and a transaction-mode pooler is the

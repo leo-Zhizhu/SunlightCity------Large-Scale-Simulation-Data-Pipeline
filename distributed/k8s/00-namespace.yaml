@@ -15,21 +15,25 @@ metadata:
 #
 # THE DESIGNED FOOTPRINT (see `python distributed/orchestrator/model.py`):
 #
-#   50 map workers   x  8 vCPU / 16 Gi  =  400 vCPU /  800 Gi
-#   10 data shards   x 16 vCPU / 128 Gi =  160 vCPU / 1280 Gi
+#   54 map workers   x  8 vCPU / 16 Gi  =  432 vCPU /  864 Gi
+#    9 data shards   x 16 vCPU / 128 Gi =  144 vCPU / 1152 Gi
 #    1 coordinator   x  8 vCPU /  32 Gi =    8 vCPU /   32 Gi
 #    2 pgbouncer     x  2 vCPU /   1 Gi =    4 vCPU /    2 Gi
 #   ------------------------------------------------------------
-#                                          572 vCPU / 2114 Gi
+#                                          588 vCPU / 2050 Gi
+#
+# Both counts are DERIVED, not chosen: `model.py --derive` takes the 15-minute
+# deadline and the stress envelope and returns 54/9. Changing either number here
+# without re-running it breaks the deadline the deployment exists to meet.
 #
 # That is a lot of RAM, and almost all of it is the shards — deliberately. Each
-# holds ~50 GB of exposure samples, so 128 Gi means a shard's entire slice of the
+# holds ~56 GB of exposure samples, so 128 Gi means a shard's entire slice of the
 # dataset sits in its page cache and the reduce phase's aggregate never touches
 # disk. It is also why the run costs only ~111 vCPU-hours: the hardware is wide, not
 # held for long.
 #
 # The quota is set ~15% above the design so a rolling replacement or one extra
-# reaper pod never blocks. Storage is counted too — ten 256Gi shard volumes plus
+# reaper pod never blocks. Storage is counted too — nine 256Gi shard volumes plus
 # the coordinator's 32Gi — because a forgotten PVC outlives the Job that made it and
 # is the most common way a batch namespace quietly fills a cluster's disk.
 # =============================================================================
@@ -40,8 +44,8 @@ metadata:
   namespace: sunlightcity
 spec:
   hard:
-    requests.cpu: "660"
-    requests.memory: 2500Gi
+    requests.cpu: "680"
+    requests.memory: 2400Gi
     # limits.cpu is deliberately absent, not merely large. The map workers and the
     # database shards both run with NO CPU limit: a CFS quota would throttle exactly
     # the burst the fleet is waiting on, and anti-affinity already gives each shard
@@ -50,8 +54,8 @@ spec:
     pods: "80"
     count/jobs.batch: "20"
     count/cronjobs.batch: "5"
-    # 10 shard volumes + 1 coordinator. A stale PVC outlives the Job that created it.
-    persistentvolumeclaims: "16"
+    # 9 shard volumes + 1 coordinator. A stale PVC outlives the Job that created it.
+    persistentvolumeclaims: "15"
     requests.storage: 3Ti
 ---
 # =============================================================================

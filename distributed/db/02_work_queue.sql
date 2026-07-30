@@ -202,7 +202,10 @@ $$ LANGUAGE sql STABLE STRICT;
 --    and collapse its throughput while nine peers idle.
 --
 --    So the claim refuses to hand out a task whose shard is already at capacity.
---    In the balanced case (10 shards x 6 = 60 slots for 50 workers) it never
+--    In the deployed case it is exact: 9 shards x 6 = 54 slots for 54 workers.
+--    That is not a coincidence — the fleet size was DERIVED as 6 x the shard
+--    count precisely so every worker has a slot and every slot has a worker
+--    (model.py --derive). Admission therefore never
 --    binds; under skew it is what keeps the cluster's aggregate ingest flat
 --    instead of concentrated. This is the coordination between the Kubernetes
 --    fleet and the database cluster, and it is one predicate.

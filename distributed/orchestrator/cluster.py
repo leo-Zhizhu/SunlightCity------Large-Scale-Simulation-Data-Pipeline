@@ -296,7 +296,9 @@ class Topology:
         shard. This is the read-locality metric: higher means a route crossing
         that boundary stays on one instance.
 
-        A pure hash gives ~1/k (0.10 at k=10). Contiguous Hilbert runs give ~0.8.
+        A pure hash gives ~1/k (0.11 at the deployed k=9). Contiguous Hilbert runs
+        over the Manhattan strip give 0.70, and it RISES as k falls — fewer, longer
+        runs mean fewer boundaries. That is the read-side reason not to over-shard.
         """
         by_cell = {(s.col, s.row): s.shard_index for s in self.sections}
         same = total = 0
@@ -319,7 +321,7 @@ class ClusterEndpoints:
     Where the instances live.
 
     The coordinator is reached THROUGH PgBouncer: the control plane is thousands
-    of tiny transactions (claim, heartbeat, complete) from 50 clients, which is
+    of tiny transactions (claim, heartbeat, complete) from 54 clients, which is
     exactly what a transaction pooler is for.
 
     Data shards are reached DIRECTLY. A pooler in a sustained bulk COPY path would
@@ -392,7 +394,8 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--show", action="store_true", help="derive and print a topology")
-    p.add_argument("--shards", type=int, default=10)
+    p.add_argument("--shards", type=int, default=9,
+                   help="default is the derived deployment shape; see model.py --derive")
     p.add_argument("--section-meters", type=float, default=DEFAULT_SECTION_METERS)
     p.add_argument("--dsn", type=int, metavar="SHARD",
                    help="print a shard's DSN (use -1 for the coordinator)")

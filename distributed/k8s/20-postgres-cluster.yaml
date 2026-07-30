@@ -1,5 +1,5 @@
 # =============================================================================
-# THE DATABASE CLUSTER — one coordinator plus ten data shards.
+# THE DATABASE CLUSTER — one coordinator plus nine data shards.
 #
 # This file is the answer to the question the whole v2 rewrite exists for:
 #
@@ -7,12 +7,13 @@
 #   at v2's 60 dates — because the router traverses an edge as an ORDERED,
 #   DIRECTIONAL sequence and a
 #   per-edge sum cannot express which end you entered from. One PostgreSQL instance
-#   cannot absorb that from 50 concurrent producers: a COPY backend is one busy CPU,
+#   cannot absorb that from 54 concurrent producers: a COPY backend is one busy CPU,
 #   so a 16 vCPU instance sustains ~12 productive streams (~2.4M rows/s) against a
 #   fleet producing 14.8M rows/s. Six sevenths of the fleet would sit waiting.
 #
-#   So there are ten of them. `python model.py --sweep` shows what that is worth:
-#   50 workers on ONE instance finish in 1.18 h; on ten, 11m 38s.
+#   So there are nine of them — the count `model.py --derive` returns for a
+#   15-minute deadline. `python model.py --sweep` shows what it is worth:
+#   54 workers on ONE instance finish in 1.18 h; on nine, 11m 08.7s.
 #
 #
 # WHY TWO KINDS OF INSTANCE AND NOT ELEVEN OF ONE
@@ -54,7 +55,7 @@ data:
   # Both shard profiles ship together so switching after the reduce phase is a
   # symlink change and a restart, not a redeploy. Generate for your own hardware:
   #   python distributed/orchestrator/pg_tune.py --role shard --profile bulk \
-  #          --ram-gb 128 --cpus 16 --workers 50 --shards 10
+  #          --ram-gb 128 --cpus 16 --workers 54 --shards 9
   #
   # Kept deliberately short here — the full annotated versions with the reasoning
   # are distributed/db/postgresql.*.conf, and DEPLOYMENT.md mounts those instead for
@@ -158,8 +159,8 @@ data:
     fsync = on
 
     max_connections = 200
-    # The federation reads ten shards through postgres_fdw. Without async_append
-    # those ten foreign scans run serially and the query costs the SUM of their
+    # The federation reads nine shards through postgres_fdw. Without async_append
+    # those nine foreign scans run serially and the query costs the SUM of their
     # latencies rather than the MAX.
     enable_async_append = on
     enable_partitionwise_aggregate = on
@@ -223,7 +224,11 @@ metadata:
     app.kubernetes.io/component: shard
 spec:
   serviceName: sunlit-shards
-  replicas: 10
+  # 9 — derived, not chosen. See `model.py --derive`: it is the smallest count
+  # that holds the 15-minute deadline with every rate 15% below bench AND one
+  # instance lost, while still offering each surviving shard the 12 concurrent
+  # COPY streams it can sustain. Must equal SUNLIT_SHARD_COUNT in 10-config.yaml.
+  replicas: 9
   # Parallel, not OrderedReady. Shards are INDEPENDENT — there is no primary, no
   # replication between them, and no bootstrap order. OrderedReady would start them
   # one at a time and turn a 40-second cluster start into seven minutes for nothing.

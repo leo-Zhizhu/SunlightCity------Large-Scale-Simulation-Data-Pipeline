@@ -49,7 +49,7 @@ BEGIN
         -- fillfactor = 100. The default 90 reserves a tenth of every page for
         -- future HOT updates that will never come — these leaves are written once
         -- by COPY and then never UPDATEd or DELETEd. On 500 GB that default would
-        -- waste ~50 GB and add 10% more pages to every sequential scan, which is
+        -- waste ~56 GB and add 10% more pages to every sequential scan, which is
         -- the only access pattern they have.
         --
         -- autovacuum_enabled = off, and this is safe ONLY because the load uses

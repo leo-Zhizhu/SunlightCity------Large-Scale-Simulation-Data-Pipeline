@@ -8,9 +8,9 @@
 # in orchestrator/cluster.py. Keeping the names identical means a config question
 # can be answered by grepping one string across both the manifest and the source.
 #
-# NOTE WHAT IS AND IS NOT HERE. The COORDINATOR's address is configuration. The ten
+# NOTE WHAT IS AND IS NOT HERE. The COORDINATOR's address is configuration. The nine
 # SHARDS' addresses are not — a worker reads them from the coordinator's meo_shards
-# registry at boot, so an instance can be replaced mid-run without redeploying 50
+# registry at boot, so an instance can be replaced mid-run without redeploying 54
 # pods. Only the DNS template is configured, because it is what the StatefulSet's
 # headless Service happens to produce.
 # =============================================================================
@@ -22,7 +22,7 @@ metadata:
 data:
   # ---- Coordinator (control plane) -----------------------------------------
   # Points at PgBouncer, not PostgreSQL directly. Claim/heartbeat/complete is
-  # thousands of tiny transactions from 50 clients, which is exactly what a
+  # thousands of tiny transactions from 54 clients, which is exactly what a
   # transaction pooler is for. See 25-pgbouncer.yaml.
   SUNLIT_COORD_HOST: "pgbouncer"
   SUNLIT_COORD_PORT: "6432"
@@ -32,17 +32,17 @@ data:
   # Reached DIRECTLY, bypassing the pooler. A transaction pooler in a sustained
   # bulk-COPY path would be a single-threaded process relaying the fleet's
   # ~700 MB/s — it would become the bottleneck the cluster exists to remove. And it
-  # would be solving nothing: sharding already holds each instance at ten backends.
+  # would be solving nothing: sharding already holds each instance at twelve backends.
   #
   # {i} is substituted with the shard ordinal. This resolves through the headless
   # Service in 20-postgres-cluster.yaml, which is why it must NOT be a
   # load-balancing Service: a worker needs one SPECIFIC instance, the one owning its
-  # section, and spreading a section's writes across ten would fail on a missing
+  # section, and spreading a section's writes across nine would fail on a missing
   # partition every time.
   SUNLIT_SHARD_HOST_TEMPLATE: "sunlit-shard-{i}.sunlit-shards"
   SUNLIT_SHARD_PORT: "5432"
   SUNLIT_SHARD_DB_TEMPLATE: "sunlit_shard_{i}"
-  SUNLIT_SHARD_COUNT: "10"
+  SUNLIT_SHARD_COUNT: "9"
 
   SUNLIT_DB_USER: "admin"
 

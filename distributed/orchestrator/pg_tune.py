@@ -25,9 +25,9 @@ for that reason: meo_tasks IS the record of what has been computed, so it is not
 reproducible from anything, so its durability is not negotiable.
 
 USAGE
-    python pg_tune.py --role shard --profile bulk --ram-gb 128 --cpus 16 --shards 10
+    python pg_tune.py --role shard --profile bulk --ram-gb 128 --cpus 16 --shards 9
     python pg_tune.py --role shard --profile serving --detect
-    python pg_tune.py --role coordinator --detect --workers 50
+    python pg_tune.py --role coordinator --detect --workers 54
     python pg_tune.py --role shard --profile bulk --detect -o /etc/postgresql/shard.conf
 
 SAFETY
@@ -114,7 +114,7 @@ def compute(ram_gb: float, cpus: int, workers: int, profile: str, role: str,
     #     worker, capped by what the cores can actually run. Ten, at the reference
     #     shape. There is no pooler in front of it because there is nothing to pool.
     #
-    #   COORDINATOR: 50 workers' worth of claim/heartbeat traffic through PgBouncer
+    #   COORDINATOR: 54 workers' worth of claim/heartbeat traffic through PgBouncer
     #     in transaction mode, which collapses to ~25 backends — but the ceiling has
     #     to tolerate a pooler restart, the orchestrator, and ad-hoc sessions.
     if coord:
@@ -150,7 +150,7 @@ def compute(ram_gb: float, cpus: int, workers: int, profile: str, role: str,
     # nodes would exhaust RAM.
     #
     # `expected_clients` replaces the old `workers`: sizing a SHARD's work_mem from
-    # the fleet size was wrong by an order of magnitude, because 50 workers only ever
+    # the fleet size was wrong by an order of magnitude, because 54 workers only ever
     # produce ten connections to any one shard. The floor of 16 still matters — on a
     # small host, deriving concurrency from client count alone understates reality,
     # since ad-hoc queries, the monitor, autovacuum and psql sessions all add sort
@@ -364,15 +364,18 @@ def compute(ram_gb: float, cpus: int, workers: int, profile: str, role: str,
     cfg["random_page_cost"] = "1.1"
     cfg["effective_io_concurrency"] = "200"
     cfg["default_statistics_target"] = "100"
-    # 3,024 leaves per shard, and partition pruning is what replaces an index on the
+    # 3,360 leaves per shard, and partition pruning is what replaces an index on the
     # sample table — so it is not optional anywhere in this deployment.
     cfg["enable_partition_pruning"] = "on"
-    if not bulk:
-        cfg["enable_partitionwise_join"] = "on"
-        cfg["enable_partitionwise_aggregate"] = "on"
+    # Emitted for BOTH shard profiles, not just serving. The reduce phase runs while
+    # the instance is still on the bulk profile, and its per-edge rollup is precisely
+    # a partitionwise aggregate over the leaf tree — pushing the GROUP BY into each
+    # leaf instead of appending 876 million rows and then grouping.
+    cfg["enable_partitionwise_join"] = "on"
+    cfg["enable_partitionwise_aggregate"] = "on"
     if coord:
-        # The federation reads ten shards through postgres_fdw. Without async_append
-        # those ten foreign scans run one after another and the query costs the SUM of
+        # The federation reads nine shards through postgres_fdw. Without async_append
+        # those nine foreign scans run one after another and the query costs the SUM of
         # their latencies rather than the MAX — which presents as "the federation is
         # slow" rather than as a missing setting.
         cfg["enable_async_append"] = "on"

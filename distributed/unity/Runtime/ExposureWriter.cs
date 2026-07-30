@@ -149,7 +149,7 @@ namespace SunlightCity.Distributed
         /// Blocks if a previous flush is still in flight — which is backpressure,
         /// and is the right behaviour: it means the shard cannot keep up, and
         /// racing further ahead would only deepen the queue. In the balanced
-        /// deployment (10 shards, 35% ingest headroom) this never blocks.
+        /// deployment (9 shards, 35% ingest headroom) this never blocks.
         /// </summary>
         public void Enqueue(ExposureTask task, SectionExposureSampler sampler)
         {

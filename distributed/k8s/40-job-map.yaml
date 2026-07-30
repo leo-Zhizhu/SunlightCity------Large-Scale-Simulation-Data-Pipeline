@@ -1,5 +1,5 @@
 # =============================================================================
-# THE MAP PHASE — 50 headless Unity workers pulling from the lease queue.
+# THE MAP PHASE — 54 headless Unity workers pulling from the lease queue.
 #
 # Depends on job/sunlit-schema having completed:
 #   kubectl -n sunlightcity wait --for=condition=complete job/sunlit-schema --timeout=20m
@@ -10,8 +10,8 @@
 # deliberate and slightly unusual combination. The reasoning:
 #
 #   * Work is NOT bound to a pod index. Each pod loops claiming tasks until the
-#     queue is dry, then exits 0. So `completions: 50` does not mean "50 tasks",
-#     it means "50 workers each ran to a clean drain".
+#     queue is dry, then exits 0. So `completions: 54` does not mean "54 tasks",
+#     it means "54 workers each ran to a clean drain".
 #
 #   * This is the "work queue with a fixed pool" pattern. It self-balances: a pod
 #     on a fast node simply completes more tasks. With an Indexed Job the assignment
@@ -29,8 +29,8 @@
 #
 # AND SCALE THE DATABASE CLUSTER WITH IT. Adding workers without adding shards
 # converts a compute-bound pipeline into an I/O-bound one, which is the exact
-# failure this architecture exists to avoid: 50 workers against ONE instance finish
-# in 1.18 h, against ten in 11m 38s. `python model.py --workers-sweep` prints the
+# failure this architecture exists to avoid: 54 workers against ONE instance finish
+# in 1.18 h, against nine in 11m 08.7s. `python model.py --workers-sweep` prints the
 # minimum shard count for any fleet size. Past the balance point the per-shard
 # admission cap in meo_claim_task simply makes the extra workers queue, so
 # over-scaling is wasteful rather than harmful.
@@ -44,8 +44,8 @@ metadata:
     app.kubernetes.io/name: sunlightcity
     app.kubernetes.io/component: map-worker
 spec:
-  parallelism: 50
-  completions: 50
+  parallelism: 54
+  completions: 54
 
   # A pod that fails is retried, but the LEASE is what actually protects the work:
   # a dead pod's task returns to the queue after lease expiry regardless of whether
@@ -63,7 +63,7 @@ spec:
   activeDeadlineSeconds: 7200
 
   # Keep finished pods for 1 h so logs are retrievable, then let the TTL
-  # controller clean up. Without this, 50 Completed pods accumulate per run.
+  # controller clean up. Without this, 54 Completed pods accumulate per run.
   ttlSecondsAfterFinished: 3600
 
   # Pod failures are counted per index rather than globally in newer APIs; this

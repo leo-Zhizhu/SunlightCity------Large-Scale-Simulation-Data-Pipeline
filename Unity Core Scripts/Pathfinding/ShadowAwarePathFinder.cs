@@ -25,7 +25,7 @@ using Npgsql;
 /// This is the v1, single-node exporter: 1.577 billion raycasts in 6 hours on one thread,
 /// with peak RAM flat at ~250 MB because the buffer is flushed every 3 simulated hours.
 /// It remains supported and is the right tool for one neighbourhood. The distributed
-/// pipeline in distributed/ writes the same rows into the same schema on 50 workers; see
+/// pipeline in distributed/ writes the same rows into the same schema on 54 workers; see
 /// docs/V1_PIPELINE.md for the full description and what v2 changes.
 ///
 /// Two things here that v2 inherits rather than replaces:
