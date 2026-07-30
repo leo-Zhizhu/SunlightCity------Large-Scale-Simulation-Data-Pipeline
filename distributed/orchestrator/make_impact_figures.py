@@ -11,14 +11,36 @@ disagree with the capacity model or with the docs that quote it.
 
 Figures
 -------
-  1. shard_scaling      wall clock vs shard count at a fixed 50 workers. The
-                        headline result: the same fleet finishes in 1.18 h on one
-                        database instance and 11m 38s on ten.
-  2. phase_breakdown    where the 11m 38s goes, and why writing is free (it overlaps
-                        raycasting) while the reduce phase is not.
-  3. directional_cost   the same edge at the same instant, walked both ways. This
+THE SIZING ARGUMENT — read in this order; together they are the derivation that
+docs/PERFORMANCE.md walks through in prose.
+
+  1. bench_ladder       the two throughput chains, built from the individual
+                        benchmarks, and the headroom between them. Where W = 6S
+                        comes from.
+  2. feasibility_map    every (workers, shards) pair against the 15-minute
+                        deadline. Three nested regions: misses it, meets it
+                        nominally, survives the stress envelope.
+  3. cost_time          the cost/time Pareto frontier, and the fact that it has
+                        no knee — so the deadline is what selects a point.
+  4. stress_envelope    the four conditions, for the cheapest deadline-meeting
+                        shape and for the deployed one. The cheapest fails three.
+  5. worker_ceiling     wall clock vs fleet size at several shard counts. Why
+                        "add nodes" stops working, and who decides when.
+
+THE RESULT
+
+  6. shard_scaling      wall clock vs shard count at a fixed 54 workers. The
+                        headline: the same fleet finishes in 1.18 h on one
+                        database instance and 11m 09s on nine.
+  7. phase_breakdown    where the 11m 09s goes, and why writing is free (it
+                        overlaps raycasting) while the reduce phase is not.
+  8. directional_cost   the same edge at the same instant, walked both ways. This
                         is why the schema keeps per-sample rows.
-  4. failure_timeline   lease-based recovery of a killed worker.
+  9. failure_timeline   lease-based recovery of a killed worker.
+
+Every figure is emitted in light and dark. Check them RASTERISED after any edit —
+overlapping labels and text running off the canvas are invisible in the SVG source
+and were the only defects found in review both times.
 
 Usage:
     python make_impact_figures.py [output_dir]
@@ -122,6 +144,43 @@ class SVG:
     def circle(self, cx, cy, r, fill, stroke=None, sw=2):
         st = f' stroke="{stroke}" stroke-width="{sw}"' if stroke else ""
         self.o.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{fill}"{st}/>')
+
+    def vtext(self, x, y, s, size=11, fill=None, anchor="middle", weight="400"):
+        """Rotated -90 degrees, for y-axis titles. A horizontal one collides with
+        the tick labels at any margin narrow enough to be worth having."""
+        fill = fill or self.t["ink"]
+        self.o.append(
+            f'<text x="0" y="0" transform="translate({x:.1f},{y:.1f}) rotate(-90)" '
+            f'font-family="{FAM}" font-size="{size}" font-weight="{weight}" '
+            f'fill="{fill}" text-anchor="{anchor}">{esc(s)}</text>')
+
+    def footer(self, text: str, size=11, pad=16, lead=15):
+        """
+        Bottom explanatory panel, wrapped to the panel's actual width and anchored
+        to the bottom of the canvas.
+
+        Written as a helper after hand-positioned footers overran the right edge in
+        every one of these figures — the text is prose and its length changes
+        whenever a model number does, so it cannot be laid out by eye.
+        """
+        avail = self.w - 80 - 2 * pad
+        budget = int(avail / (size * 0.505))       # measured for this font stack
+        lines, cur = [], ""
+        for word in text.split():
+            if len(cur) + len(word) + 1 > budget:
+                lines.append(cur)
+                cur = word
+            else:
+                cur = f"{cur} {word}".strip()
+        if cur:
+            lines.append(cur)
+        h = 2 * pad + lead * (len(lines) - 1) + size
+        top = self.h - h - 18
+        self.rect(40, top, self.w - 80, h, self.t["panel"], rx=6)
+        for i, ln in enumerate(lines):
+            self.text(40 + pad, top + pad + size * 0.82 + i * lead, ln, size,
+                      self.t["ink2"] if i == 0 else self.t["muted"])
+        return top
 
     def done(self) -> str:
         self.o.append("</svg>")
@@ -229,9 +288,9 @@ def fig_shard_scaling(theme: str) -> str:
            f"The fleet produces {model.WORKERS * model.WORKER_RAYCAST_RATE / 1e6:.1f}M/s.",
            11, t["ink2"])
     s.text(56, fy + 38,
-           f"So the cluster needs at least {kb}. Ten are deployed — "
-           f"{model.io_headroom() * 100:+.0f}% headroom, so a checkpoint or a vacuum on one "
-           "instance cannot stall the fleet.",
+           f"So the cluster needs at least {kb} to keep up at all. {model.SHARDS} are deployed — "
+           f"{model.io_headroom() * 100:+.0f}% headroom, so a checkpoint, a vacuum, or "
+           "losing an instance outright cannot stall the fleet.",
            11, t["muted"])
     return s.done()
 
@@ -499,6 +558,502 @@ def fig_failure(theme: str) -> str:
     return s.done()
 
 
+def _mix(a: str, b: str, f: float) -> str:
+    """Linear blend of two #rrggbb colours. Used for the feasibility ramp."""
+    f = max(0.0, min(1.0, f))
+    pa = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+    pb = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * f):02x}" for x, y in zip(pa, pb))
+
+
+# ===========================================================================
+# FIGURE 5 — the feasibility map
+#
+# The figure the sizing decision is actually made on. Every cell is one candidate
+# (workers, shards). Three NESTED regions, and the nesting is the argument:
+#
+#   grey        misses 15 minutes outright
+#   pale blue   meets it nominally — and this is the region a naive capacity plan
+#               would choose from, which is why it is drawn at all
+#   solid blue  survives the full stress envelope, which is far smaller
+#
+# The chosen shape is the cheapest cell in the innermost region. Showing the two
+# outer regions is what makes "cheapest" mean something.
+# ===========================================================================
+def fig_feasibility(theme: str) -> str:
+    t = THEMES[theme]
+    W, H = 900, 545
+    shard_range = list(range(2, 17))
+    worker_range = list(range(18, 116, 6))
+
+    s = SVG(W, H, t,
+            f"Feasibility of every (workers, shards) pair against the 15-minute "
+            f"deadline. {model.WORKERS} workers and {model.SHARDS} shards is the "
+            f"cheapest pair that survives the full stress envelope.")
+
+    s.text(40, 34, "Where the 15-minute deadline can actually be met", 16, t["ink"],
+           weight="600")
+    s.text(40, 55, "Each cell is one candidate deployment. The deadline alone admits "
+                   "far more shapes than the stress envelope does.", 11.5, t["muted"])
+    s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
+
+    px, py = 84, 108
+    cw, ch = 34, 17
+    pw, ph = cw * len(shard_range), ch * len(worker_range)
+
+    # Fastest feasible time, for the colour ramp's dark end.
+    feas = [model.total_seconds(w, k) for w in worker_range for k in shard_range
+            if model.total_seconds(w, k) <= model.TARGET_SECONDS]
+    t_fast = min(feas) if feas else 0.0
+
+    for iw, w in enumerate(worker_range):
+        for ik, k in enumerate(shard_range):
+            x, y = px + ik * cw, py + (len(worker_range) - 1 - iw) * ch
+            tt = model.total_seconds(w, k)
+            env = model.envelope(w, k)
+            if tt > model.TARGET_SECONDS:
+                fill, op = t["muted"], 0.13
+            elif env["passes"]:
+                # Darker = faster, across the innermost region only.
+                f = 1.0 - (tt - t_fast) / max(1.0, model.TARGET_SECONDS - t_fast)
+                fill, op = _mix(t["v2_light"], t["v2"], f), 1.0
+            else:
+                fill, op = t["v2_light"], 0.40
+            s.rect(x + 0.6, y + 0.6, cw - 1.2, ch - 1.2, fill, rx=2, opacity=op)
+
+    # axes
+    for ik, k in enumerate(shard_range):
+        if k % 2 == 0:
+            s.text(px + ik * cw + cw / 2, py + ph + 16, str(k), 9.5, t["muted"],
+                   anchor="middle")
+    s.text(px + pw / 2, py + ph + 34, "database shards", 10.5, t["ink2"], anchor="middle")
+    for iw, w in enumerate(worker_range):
+        if w % 12 == 6 or iw == 0:
+            y = py + (len(worker_range) - 1 - iw) * ch + ch / 2 + 3.5
+            s.text(px - 10, y, str(w), 9.5, t["muted"], anchor="end")
+    s.vtext(px - 46, py + ph / 2, "map workers", 10.5, t["ink2"])
+
+    # The chosen cell, ringed rather than filled so its colour still reads.
+    ci = shard_range.index(model.SHARDS)
+    cj = worker_range.index(min(worker_range, key=lambda v: abs(v - model.WORKERS)))
+    cx = px + ci * cw + cw / 2
+    cy = py + (len(worker_range) - 1 - cj) * ch + ch / 2
+    s.circle(cx, cy, 7.5, "none", stroke=t["accent"], sw=2.5)
+    # Leader up into the margin above the grid: every direction inside the grid
+    # lands the label on top of other cells.
+    s.line(cx, cy - 9, cx, py - 12, t["accent"], 1.5)
+    s.text(cx, py - 18, f"{model.WORKERS} / {model.SHARDS}  ·  {model.vcpu()} vCPU  ·  "
+           f"{fmt_t(model.total_seconds())}", 11, t["accent"], anchor="middle",
+           weight="700")
+
+    # The shape a deadline-only analysis picks. Marked as rejected, because the
+    # whole point of the figure is that it lies in the pale region.
+    nc, nw, ns, nt = model.cheapest_nominal()
+    if ns in shard_range:
+        ni = shard_range.index(ns)
+        nj = min(range(len(worker_range)), key=lambda i: abs(worker_range[i] - nw))
+        nx = px + ni * cw + cw / 2
+        ny = py + (len(worker_range) - 1 - nj) * ch + ch / 2
+        s.circle(nx, ny, 5, "none", stroke=t["bad"], sw=2)
+        s.line(nx - 7, ny, nx - 26, ny + 20, t["bad"], 1.5)
+        s.text(nx - 30, ny + 20, f"{nw}/{ns} — rejected", 10, t["bad"], anchor="end",
+               weight="700")
+        s.text(nx - 30, ny + 33, f"{fmt_t(nt)}, 1% margin", 9, t["muted"], anchor="end")
+
+    # legend
+    lx, ly = px + pw + 30, py - 4
+    for fill, op, head, sub in (
+        (t["muted"], 0.13, "misses 15 min", "not a candidate at all"),
+        (t["v2_light"], 0.40, "meets it nominally", "a deadline-only plan"),
+        (t["v2"], 1.0, "survives the envelope", "the real candidates"),
+    ):
+        s.rect(lx, ly, 16, 16, fill, rx=3, opacity=op)
+        s.text(lx + 24, ly + 8, head, 10, t["ink"], weight="600")
+        s.text(lx + 24, ly + 21, sub, 9, t["muted"])
+        ly += 44
+
+    s.text(lx, ly + 6, "The envelope:", 10, t["ink"], weight="600")
+    for i, line in enumerate((
+            "· nominal under 15 min",
+            f"· every rate {model.STRESS_RATE_SHORTFALL:.0%} low",
+            "· that, minus 1 shard",
+            f"  and {model.STRESS_WORKER_LOSS:.0%} of the fleet",
+            "· still compute-bound",
+            "  after losing a shard",
+            "· all 12 streams used")):
+        s.text(lx, ly + 22 + i * 13, line, 9, t["muted"])
+
+    d = model.derive_shape()
+    s.footer(
+        f"{d['deadline_only_count']:,} of the shapes searched meet the deadline; only "
+        f"{d['feasible_count']:,} meet the whole envelope. The cost band is flat to a few percent, "
+        f"so the deadline alone leaves a dozen indistinguishable choices — the two "
+        f"STRUCTURAL conditions are what actually decide it. The dark band runs along "
+        f"W = 6S, where every instance is saturated and none contended.")
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 6 — why buying workers stops working
+#
+# Answers the question the whole architecture turns on: if the run is too slow, why
+# not just add nodes? Each curve is a fixed shard count. Every one of them flattens,
+# and where it flattens has nothing to do with the fleet — it is the cluster's
+# ingest ceiling. The horizontal tails are workers being paid for and idle.
+# ===========================================================================
+def fig_worker_ceiling(theme: str) -> str:
+    t = THEMES[theme]
+    W, H = 880, 470
+    s = SVG(W, H, t,
+            "Wall clock against fleet size for several shard counts. Each curve "
+            "flattens at its database ingest ceiling, so adding workers past that "
+            "point buys nothing.")
+
+    s.text(40, 34, "Adding nodes stops helping, and the database decides when",
+           16, t["ink"], weight="600")
+    s.text(40, 55, "Every curve is a fixed number of PostgreSQL instances. The flat "
+                   "tails are workers running and waiting.", 11.5, t["muted"])
+    s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
+
+    px, py, pw, ph = 78, 90, W - 78 - 210, 236
+    wmax, tmax = 120, 30 * 60.0
+
+    def sx(w): return px + pw * w / wmax
+    def sy(v): return py + ph * (1 - min(v, tmax) / tmax)
+
+    for mins in range(0, 31, 5):
+        y = sy(mins * 60)
+        s.line(px, y, px + pw, y, t["grid"], 1)
+        s.text(px - 10, y + 4, f"{mins}m", 9.5, t["muted"], anchor="end")
+    for w in (0, 20, 40, 60, 80, 100, 120):
+        s.text(sx(w), py + ph + 18, str(w), 9.5, t["muted"], anchor="middle")
+    s.text(px + pw / 2, py + ph + 36, "map workers", 10.5, t["ink2"], anchor="middle")
+    s.vtext(px - 46, py + ph / 2, "wall clock", 10.5, t["ink2"])
+
+    # the deadline
+    s.line(px, sy(model.TARGET_SECONDS), px + pw, sy(model.TARGET_SECONDS),
+           t["accent"], 2, dash="6 4")
+    s.text(px + 8, sy(model.TARGET_SECONDS) - 8,
+           f"{model.TARGET_SECONDS / 60:.0f}-minute deadline", 10.5, t["accent"],
+           weight="700")
+
+    curves = [(4, 0.42), (6, 0.62), (model.SHARDS, 1.0), (14, 0.78)]
+    for k, strength in curves:
+        pts = [(w, v) for w in range(2, wmax + 1, 2)
+               if (v := model.total_seconds(w, k)) <= tmax]
+        if not pts:
+            continue
+        colour = t["v2"] if k == model.SHARDS else _mix(t["surface"], t["v2"], strength)
+        s.path("M " + " L ".join(f"{sx(w):.1f} {sy(v):.1f}" for w, v in pts),
+               colour, sw=3 if k == model.SHARDS else 1.8)
+        # Label at the curve's right edge, where it has already flattened.
+        vend = model.total_seconds(wmax, k)
+        s.text(sx(wmax) + 8, sy(vend) + 4, f"{k} shards", 10,
+               t["ink"] if k == model.SHARDS else t["muted"],
+               weight="700" if k == model.SHARDS else "400")
+
+    # Where each curve turns over: the last fleet size still compute-bound. Skipped
+    # when that point is off-scale, so no dot is left floating without its curve.
+    for k, _ in curves:
+        knee = max((w for w in range(2, wmax + 1)
+                    if model.bound_by(w, k) == "compute-bound"), default=2)
+        vk = model.total_seconds(knee, k)
+        if vk <= tmax:
+            s.circle(sx(knee), sy(vk), 3.5, t["bad"])
+
+    s.circle(sx(model.WORKERS), sy(model.total_seconds()), 6, t["accent"],
+             stroke=t["surface"], sw=2)
+
+    bx = px + pw + 76
+    s.rect(bx, py, 124, 118, t["panel"], rx=6)
+    s.text(bx + 12, py + 22, "deployed", 10, t["ink2"], weight="600")
+    s.text(bx + 12, py + 42, f"{model.WORKERS} / {model.SHARDS}", 18, t["accent"],
+           weight="700")
+    s.text(bx + 12, py + 60, fmt_t(model.total_seconds()), 11, t["ink"])
+    s.text(bx + 12, py + 80, "red dots mark", 9, t["muted"])
+    s.text(bx + 12, py + 92, "where each curve", 9, t["muted"])
+    s.text(bx + 12, py + 104, "goes I/O-bound", 9, t["muted"])
+
+    s.footer(
+        f"Four shards cannot meet the deadline with ANY fleet — that curve flattens at "
+        f"{fmt_t(model.total_seconds(wmax, 4))}, above the line, and stays there. (Two "
+        f"shards is off the top of this axis entirely, at "
+        f"{fmt_t(model.total_seconds(wmax, 2))}.) This is why the answer to 'it is too slow' "
+        f"is not always 'add nodes': past the ceiling every extra pod raycasts into a "
+        f"queue. The {model.SHARDS}-shard curve is still bending at {model.WORKERS} workers, "
+        f"which is what it means for the pipeline to be compute-bound — and why the fleet "
+        f"was sized to sit there.")
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 7 — cost against time, and the absence of a knee
+#
+# The honest version of a diminishing-returns chart. There is no knee: the curve is
+# ~1/W, so marginal return decays smoothly and no amount of staring at it yields a
+# natural stopping point. The deadline is what stops it. Saying so is the figure's
+# whole content — a chart implying an inflection that is not there would be worse
+# than no chart.
+# ===========================================================================
+def fig_cost_time(theme: str) -> str:
+    t = THEMES[theme]
+    W, H = 880, 460
+    pf = [(c, w, k, v) for c, w, k, v in model.frontier() if c <= 1250]
+
+    s = SVG(W, H, t,
+            "Cost/time Pareto frontier. The curve decays smoothly with no knee, so "
+            "the deadline and the stress envelope are what select a point on it.")
+
+    s.text(40, 34, "There is no knee to find", 16, t["ink"], weight="600")
+    s.text(40, 55, "Fastest run achievable at each hardware budget. Returns fall off "
+                   "smoothly — so the deadline has to be the thing that stops you.",
+           11.5, t["muted"])
+    s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
+
+    px, py, pw, ph = 78, 90, W - 78 - 200, 232
+    cmax, tmax = 1250, 40 * 60.0
+
+    def sx(c): return px + pw * c / cmax
+    def sy(v): return py + ph * (1 - min(v, tmax) / tmax)
+
+    for mins in range(0, 41, 10):
+        y = sy(mins * 60)
+        s.line(px, y, px + pw, y, t["grid"], 1)
+        s.text(px - 10, y + 4, f"{mins}m", 9.5, t["muted"], anchor="end")
+    for c in (0, 250, 500, 750, 1000, 1250):
+        s.text(sx(c), py + ph + 18, str(c), 9.5, t["muted"], anchor="middle")
+    s.text(px + pw / 2, py + ph + 36, "total provisioned vCPU", 10.5, t["ink2"],
+           anchor="middle")
+    s.vtext(px - 46, py + ph / 2, "wall clock", 10.5, t["ink2"])
+
+    # Everything above the deadline is not a choice at all.
+    s.rect(px, py, pw, sy(model.TARGET_SECONDS) - py, t["bad"], opacity=0.06)
+    s.line(px, sy(model.TARGET_SECONDS), px + pw, sy(model.TARGET_SECONDS),
+           t["accent"], 2, dash="6 4")
+    s.text(px + pw - 6, sy(model.TARGET_SECONDS) - 9,
+           f"{model.TARGET_SECONDS / 60:.0f} min", 10.5, t["accent"], anchor="end",
+           weight="700")
+
+    # Only the on-scale part of the frontier: clamping would draw a flat line along
+    # the top edge that looks like a real plateau and is not one.
+    on = [(c, v) for c, _, _, v in pf if v <= tmax]
+    s.path("M " + " L ".join(f"{sx(c):.1f} {sy(v):.1f}" for c, v in on), t["v2"], sw=2.5)
+
+    # Marginal return at three budgets, to show it decaying rather than breaking.
+    for target_c in (470, 780, 1140):
+        near = min(pf, key=lambda r: abs(r[0] - target_c))
+        i = pf.index(near)
+        if i == 0:
+            continue
+        c0, _, _, v0 = pf[i - 1]
+        c1, _, _, v1 = near
+        rate = (v0 - v1) / max(1e-9, (c1 - c0) / 100)
+        s.circle(sx(c1), sy(v1), 4, t["v2"], stroke=t["surface"], sw=1.5)
+        # Labels hang BELOW the curve. Above it they land on the deadline line, which
+        # is where the interesting part of the frontier happens to run.
+        s.line(sx(c1), sy(v1) + 6, sx(c1), sy(v1) + 22, t["axis"], 1)
+        s.text(sx(c1), sy(v1) + 36, f"{rate:.0f} s", 11, t["ink"], anchor="middle",
+               weight="700")
+        s.text(sx(c1), sy(v1) + 48, "per +100 vCPU", 8.5, t["muted"], anchor="middle")
+
+    d = model.derive_shape()
+    s.circle(sx(d["vcpu"]), sy(d["envelope"]["nominal"]), 6.5, t["accent"],
+             stroke=t["surface"], sw=2)
+    s.text(sx(d["vcpu"]) + 11, sy(d["envelope"]["nominal"]) - 6,
+           f"{d['workers']}/{d['shards']}", 11, t["accent"], weight="700")
+
+    nc, nw, ns, nt = model.cheapest_nominal()
+    s.circle(sx(nc), sy(nt), 4.5, "none", stroke=t["bad"], sw=2)
+    s.text(sx(nc) - 8, sy(nt) + 4, f"{nw}/{ns}", 9.5, t["bad"], anchor="end", weight="600")
+
+    bx = px + pw + 26
+    s.rect(bx, py, 152, 150, t["panel"], rx=6)
+    s.text(bx + 12, py + 22, "asymptote", 10, t["ink2"], weight="600")
+    s.text(bx + 12, py + 44, f"{model.FLEET_STARTUP_SECONDS + model.ANALYZE_SECONDS} s", 20,
+           t["ink"], weight="700")
+    for i, line in enumerate((
+            "spin-up + ANALYZE.",
+            "Neither shrinks with",
+            "hardware, so no budget",
+            "beats it.",
+            "",
+            f"Past ~{model.vcpu(103, 14)} vCPU an extra",
+            f"100 buys less than the",
+            f"{model.ANALYZE_SECONDS} s floor itself.")):
+        s.text(bx + 12, py + 66 + i * 12, line, 9, t["muted"])
+
+    s.footer(
+        "The frontier is a STAIRCASE: workers climb at a fixed shard count until the "
+        "shape goes I/O-bound, then a shard is added and workers resume. Every tread is "
+        "compute-bound, which is the cluster doing its job. Marginal return halves "
+        "roughly every +200 vCPU with no inflection anywhere — so 'diminishing returns' "
+        "cannot pick a point on this curve, and did not. The deadline did.")
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 8 — the stress envelope, and what it rejects
+#
+# Four bars per shape, one per condition. The naive shape clears the deadline and
+# fails everything after it; the deployed shape clears all four. This is the figure
+# that shows WHY the extra 160 vCPU is bought, which a nominal-only chart cannot.
+# ===========================================================================
+def fig_stress_envelope(theme: str) -> str:
+    t = THEMES[theme]
+    W, H = 880, 480
+    nc, nw, ns, _ = model.cheapest_nominal()
+    groups = [
+        (f"{nw} workers / {ns} shards", nc, model.envelope(nw, ns),
+         "cheapest that meets the deadline"),
+        (f"{model.WORKERS} workers / {model.SHARDS} shards", model.vcpu(),
+         model.envelope(model.WORKERS, model.SHARDS), "deployed"),
+    ]
+    conds = [("nominal", "every rate as benchmarked"),
+             ("pessimistic", f"every rate {model.STRESS_RATE_SHORTFALL:.0%} below bench"),
+             ("failure", "one shard + 10% of the fleet lost"),
+             ("pessimistic_failure", "both at once")]
+
+    s = SVG(W, H, t,
+            "The four stress conditions for the cheapest deadline-meeting shape and "
+            "for the deployed shape. The cheapest fails three of four.")
+
+    s.text(40, 34, "Why the deployed shape costs more than the deadline requires",
+           16, t["ink"], weight="600")
+    s.text(40, 55, "Same deadline, four conditions. Meeting it on paper is not the "
+                   "same as meeting it.", 11.5, t["muted"])
+    s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
+
+    px, pw = 300, W - 300 - 92
+    tmax = 19 * 60.0
+
+    def sx(v): return px + pw * min(v, tmax) / tmax
+
+    y = 92
+    for title, cost, env, note in groups:
+        s.text(40, y + 4, title, 12.5, t["ink"], weight="700")
+        s.text(40, y + 20, f"{cost} vCPU · {note}", 10, t["muted"])
+        y += 34
+        for key, label in conds:
+            v = env[key]
+            over = v > model.TARGET_SECONDS
+            s.rect(px, y - 9, sx(v) - px, 18, t["bad"] if over else t["v2"], rx=3,
+                   opacity=1.0 if over else 0.88)
+            s.text(px - 12, y + 4, label, 10, t["ink2"], anchor="end")
+            s.text(sx(v) + 8, y + 4, fmt_t(v), 10,
+                   t["bad"] if over else t["ink"], weight="700")
+            if over:
+                s.text(sx(v) + 52, y + 4, "OVER", 9, t["bad"], weight="700")
+            y += 25
+        y += 22
+
+    # the deadline, drawn over the bars
+    s.line(sx(model.TARGET_SECONDS), 118, sx(model.TARGET_SECONDS), y - 34,
+           t["accent"], 2, dash="5 3")
+    s.text(sx(model.TARGET_SECONDS), 112, f"{model.TARGET_SECONDS / 60:.0f} min",
+           10.5, t["accent"], anchor="middle", weight="700")
+
+    for mins in (0, 5, 10, 15):
+        s.text(sx(mins * 60), y - 26, f"{mins}m", 9, t["muted"], anchor="middle")
+
+    s.footer(
+        f"The pessimistic row is not a failure scenario — it is the possibility that the "
+        f"benchmarks are simply optimistic, which does not clear up. Failures happen in "
+        f"that world too, so the bottom row is the one an SLO actually has to survive. "
+        f"{model.vcpu() - nc} extra vCPU ({100 * (model.vcpu() / nc - 1):.0f}%) buys the "
+        f"difference between passing one condition and passing all four.")
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 9 — the measurement ladder
+#
+# Where the model's numbers come from. Two independent chains that have to meet:
+# the fleet's production rate and the cluster's ingest rate. Sizing is the act of
+# making the second exceed the first, and the figure is drawn so the gap between
+# them — the ingest headroom — is the thing you see.
+# ===========================================================================
+def fig_bench_ladder(theme: str) -> str:
+    t = THEMES[theme]
+    W, H = 880, 450
+    s = SVG(W, H, t,
+            "How the per-worker and per-shard rates are built from individual "
+            "benchmarks, and the headroom between the fleet's output and the "
+            "cluster's ingest capacity.")
+
+    s.text(40, 34, "The two rates the sizing turns on, and where they came from",
+           16, t["ink"], weight="600")
+    s.text(40, 55, "Two chains that have to meet: sizing is making the lower one exceed "
+                   "the upper one. (B6-B9 are reduce-phase rates, not on this axis.)",
+           11.5, t["muted"])
+    s.text(W - 40, 34, "MEASURED", 9.5, t["muted"], anchor="end", weight="600")
+
+    px, pw = 210, W - 210 - 210
+    rmax = 24e6
+
+    def sx(v): return px + pw * (v / rmax) ** 0.5   # sqrt: 73k and 21.6M on one axis
+
+    chains = [
+        ("THE FLEET PRODUCES", t["v2"], [
+            ("B1", "v1, one thread, end to end", model.V1_ROW_RATE, "measured on v1's own run"),
+            ("B2", f"x {model.BATCH_SPEEDUP} batched raycasts",
+             model.V1_ROW_RATE * model.BATCH_SPEEDUP, "RaycastCommand.ScheduleBatch"),
+            ("B3", f"x {model.LOCALITY_SPEEDUP} section-local BVH",
+             model.WORKER_ROW_RATE, "one worker: 296k rows/s"),
+            ("", f"x {model.WORKERS} workers",
+             model.WORKERS * model.WORKER_ROW_RATE, "the fleet: 15.97M rows/s"),
+        ]),
+        ("THE CLUSTER ABSORBS", t["accent"], [
+            ("B4", "one binary COPY stream", model.COPY_ROWS_PER_STREAM,
+             "into a WAL-skipped relation"),
+            ("B5", f"x {model.shard_max_streams()} streams per instance",
+             model.shard_max_streams() * model.COPY_ROWS_PER_STREAM,
+             f"one shard: 2.4M rows/s on {model.SHARD_VCPU} vCPU"),
+            ("", f"x {model.SHARDS} shards", model.cluster_ingest_rate(),
+             "the cluster: 21.6M rows/s"),
+        ]),
+    ]
+
+    y = 96
+    for title, colour, rows in chains:
+        s.text(40, y, title, 10.5, t["ink"], weight="700")
+        y += 20
+        for bid, label, rate, note in rows:
+            final = note.startswith("the ")
+            s.rect(px, y - 8, sx(rate) - px, 16, colour, rx=3,
+                   opacity=1.0 if final else 0.45)
+            s.text(px - 12, y + 4, label, 10.5, t["ink"] if final else t["ink2"],
+                   anchor="end", weight="700" if final else "400")
+            if bid:
+                s.text(44, y + 4, bid, 9, t["muted"], anchor="start", family=MONO)
+            s.text(sx(rate) + 8, y + 4,
+                   f"{rate / 1e6:.2f}M" if rate >= 1e6 else f"{rate / 1000:.0f}k",
+                   10, t["ink"], weight="700" if final else "400")
+            s.text(sx(rate) + 56, y + 4, note, 9, t["muted"])
+            y += 23
+        y += 16
+
+    # The gap between the two chain endpoints IS the sizing margin.
+    fleet = model.WORKERS * model.WORKER_ROW_RATE
+    clus = model.cluster_ingest_rate()
+    gy = y + 4
+    s.line(sx(fleet), gy - 118, sx(fleet), gy, t["v2"], 1.2, dash="3 3")
+    s.line(sx(clus), gy - 62, sx(clus), gy, t["accent"], 1.2, dash="3 3")
+    s.line(sx(fleet), gy, sx(clus), gy, t["good"], 2)
+    s.line(sx(fleet), gy - 4, sx(fleet), gy + 4, t["good"], 2)
+    s.line(sx(clus), gy - 4, sx(clus), gy + 4, t["good"], 2)
+    s.text(sx(clus) + 10, gy + 4, f"{model.io_headroom() * 100:+.0f}% headroom",
+           10.5, t["good"], weight="700")
+
+    s.footer(
+        f"One shard sustains "
+        f"{model.shard_max_streams() * model.COPY_ROWS_PER_STREAM / model.WORKER_ROW_RATE:.2f} "
+        f"workers' output, so at {model.STREAMS_PER_WORKER} COPY streams each it feeds "
+        f"{model.shard_max_streams() // model.STREAMS_PER_WORKER}. That single ratio is where "
+        f"W = 6S comes from, and with it the whole deployment shape: {model.SHARDS} shards x "
+        f"{model.shard_max_streams() // model.STREAMS_PER_WORKER} = {model.WORKERS} workers, "
+        f"every instance saturated and none contended. The horizontal axis is sqrt-scaled "
+        f"to hold 73k and 21.6M at once. python model.py --bench prints each method.")
+    return s.done()
 
 
 FIGURES = {
@@ -506,6 +1061,11 @@ FIGURES = {
     "phase_breakdown": fig_phase_breakdown,
     "directional_cost": fig_directional_cost,
     "failure_timeline": fig_failure,
+    "feasibility_map": fig_feasibility,
+    "worker_ceiling": fig_worker_ceiling,
+    "cost_time": fig_cost_time,
+    "stress_envelope": fig_stress_envelope,
+    "bench_ladder": fig_bench_ladder,
 }
 
 
