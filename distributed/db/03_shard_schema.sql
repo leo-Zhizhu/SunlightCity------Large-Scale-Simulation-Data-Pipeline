@@ -47,16 +47,34 @@
 -- stating: "N billion observations" and "N billion rows" being the same number is a
 -- property of THIS encoding rather than an inevitability.
 --
--- The encoding is expensive: 68 bytes on the page to carry one bit, which is 0.18%
--- payload efficiency. A packed alternative — one row per (sample point, date)
--- holding a 360-bit bitmap — would be 21.9M rows and about 2 GB instead of 500 GB,
--- roughly 245x smaller, and the whole dataset would fit on a single instance.
+-- The encoding is expensive: 68 bytes of page to carry one bit — 0.18% payload. The
+-- alternative is to let the bit's POSITION carry the timestamp (bit k = minute
+-- 180 + 3k), which makes both the timestamp and the repeated UUID disappear into the
+-- addressing. Measured on PostgreSQL 16, one section for one date:
 --
--- It is not used because the v1 column set is a hard requirement and every v1
--- consumer selects those three columns by name. That is a real cost knowingly
--- accepted, not an oversight. Note the compatibility VIEWS below are what would make
--- a packed encoding introducible later without breaking any consumer: the view keeps
--- promising three columns while the storage underneath changes shape.
+--     long form          1,564,920 rows   102 MB    68.3 B/row     1x
+--     BIT(360) per day       4,347 rows   464 kB   109.3 B/row   225x smaller
+--     BIT(60) per window    26,082 rows  2152 kB    84.5 B/row    48x smaller
+--
+-- At the full 60-date scale that is 502 GB against 2.2 GB or 10.3 GB. The re-encoding
+-- is LOSSLESS — a bijection; every observation stays individually addressable, and a
+-- view over generate_series(0, 359) reconstructs these three columns exactly.
+--
+-- The per-window variant is the one that would fit this architecture: a per-DAY row
+-- spans six windows and therefore six tasks, so six tasks would have to UPDATE one
+-- row — forfeiting the WAL skip, FREEZE and one-task-one-relation all at once. Per
+-- window is exactly one row per sample per task, and still 48x smaller.
+--
+-- It is not adopted because the v1 column set is a hard requirement and every v1
+-- consumer selects those three columns by name. That is a cost knowingly accepted, and
+-- it is worth being blunt about its size: at the packed encoding this whole dataset
+-- would need ONE database instance rather than ten. The cluster is a consequence of
+-- the encoding, not of the physics.
+--
+-- The compatibility VIEWS below are what would make a change of mind cheap: they keep
+-- promising three columns while the storage underneath is free to change shape. See
+-- docs/DB_CLUSTER.md for the measured query-cost comparison (packing wins every query
+-- this pipeline serves; the only penalty is a full v1-style expansion, 4.7x).
 --
 --
 -- THE PARTITION SHAPE, AND WHY IT IS EXACTLY THIS

@@ -670,15 +670,24 @@ def inventory() -> None:
     print(f"    The cost of that encoding: {SAMPLE_ROW_BYTES} B on the page to carry 1 bit "
           f"of payload,")
     print(f"    = {100 / (SAMPLE_ROW_BYTES * 8):.2f}% payload efficiency.")
-    arr_rows = SAMPLE_POINTS * DAYS
-    arr_gb = arr_rows * 100 / 1024 ** 3
-    print(f"    A packed alternative — one row per (sample point, date) holding a")
-    print(f"    {STEPS_PER_DAY}-bit bitmap — would be {arr_rows:,} rows and {arr_gb:.1f} GB,")
-    print(f"    {RAW_SAMPLES_GB / arr_gb:.0f}x smaller, and would fit on ONE instance.")
-    print("    It is not used because the v1 column set is a hard requirement and every")
-    print("    v1 consumer selects those three columns. The compatibility VIEWS mean a")
-    print("    packed encoding could be introduced underneath them later without breaking")
-    print("    any consumer — see docs/DB_CLUSTER.md.")
+    # Measured bytes/row on PostgreSQL 16, not estimated. See docs/DB_CLUSTER.md.
+    b_rows, b_gb = SAMPLE_POINTS * DAYS, SAMPLE_POINTS * DAYS * 109.3 / 1024 ** 3
+    c_rows = SAMPLE_POINTS * DAYS * TIME_WINDOWS
+    c_gb = c_rows * 84.5 / 1024 ** 3
+    print("    Letting the bit's POSITION carry the timestamp (bit k = minute 180+3k)")
+    print("    removes both the timestamp and the repeated UUID. Measured:")
+    print(f"      BIT({STEPS_PER_DAY}) per (sample, date)     "
+          f"{b_rows:>15,} rows  {b_gb:>6.1f} GB  {RAW_SAMPLES_GB / b_gb:>4.0f}x smaller")
+    print(f"      BIT({steps_per_window()}) per (sample, date, window) "
+          f"{c_rows:>13,} rows  {c_gb:>6.1f} GB  {RAW_SAMPLES_GB / c_gb:>4.0f}x smaller")
+    print("    Lossless — a bijection; a view over generate_series rebuilds v1's three")
+    print("    columns exactly. The per-window variant is the one compatible with")
+    print("    one-task-one-relation (a per-day row would span six tasks).")
+    print(f"    At that encoding the fleet would produce {c_rows / map_seconds():,.0f} rows/s")
+    print(f"    against {shard_max_streams() * COPY_ROWS_PER_STREAM:,}/s per instance — "
+          f"ONE instance, {shard_max_streams() * COPY_ROWS_PER_STREAM / (c_rows / map_seconds()):.0f}x over.")
+    print("    NOT adopted: the v1 column set is a hard requirement. The cluster is a")
+    print("    consequence of the encoding, not of the physics — docs/DB_CLUSTER.md.")
 
     print("\n  ROWS vs RAYCASTS — not the same number")
     print(f"    rows written             {EXPOSURE_ROWS:>16,}   every (sample, timestep)")
