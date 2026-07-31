@@ -7,13 +7,6 @@ measured — a deadline was set, the unit rates were benchmarked, and the fleet 
 sizes fall out of the two. Read §1–§6 in order and the numbers in §7 onward are already
 justified.
 
-Every figure here is `python distributed/orchestrator/model.py`. That module is the single
-source for this file, the README, the generated charts and `reduce_finalize.py`'s
-throughput report, so none of them can disagree. The derivation itself is executable:
-
-```bash
-python distributed/orchestrator/model.py --derive
-```
 
 ---
 
