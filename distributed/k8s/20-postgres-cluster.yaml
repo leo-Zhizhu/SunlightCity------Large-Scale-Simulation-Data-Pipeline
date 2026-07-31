@@ -9,7 +9,7 @@
 #   per-edge sum cannot express which end you entered from. One PostgreSQL instance
 #   cannot absorb that from 54 concurrent producers: a COPY backend is one busy CPU,
 #   so a 16 vCPU instance sustains ~12 productive streams (~2.4M rows/s) against a
-#   fleet producing 14.8M rows/s. Six sevenths of the fleet would sit waiting.
+#   fleet producing 15.97M rows/s. Six sevenths of the fleet would sit waiting.
 #
 #   So there are nine of them — the count `model.py --derive` returns for a
 #   15-minute deadline. `python model.py --sweep` shows what it is worth:
@@ -169,14 +169,14 @@ data:
 
     # The most aggressive autovacuum in the deployment, and it belongs here:
     # meo_tasks turns over ~42 row versions per task and its partial indexes drive
-    # claim latency for all 50 workers.
+    # claim latency for all 54 workers.
     autovacuum = on
     autovacuum_naptime = 15s
     autovacuum_vacuum_cost_delay = 0
 
     log_checkpoints = on
     log_lock_waits = on
-    # A claim over 200 ms means 50 workers each waited that long. The single most
+    # A claim over 200 ms means 54 workers each waited that long. The single most
     # valuable warning this instance can emit.
     log_min_duration_statement = 200
     log_line_prefix = '%m [%p] %q%u@%d/%a '
@@ -353,7 +353,7 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        # Local NVMe. A shard holds ~50 GB of samples plus indexes and WAL; 256Gi is
+        # Local NVMe. A shard holds ~56 GB of samples plus indexes and WAL; 256Gi is
         # generous headroom for a second run's partitions living alongside the first.
         resources:
           requests:

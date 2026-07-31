@@ -5,8 +5,8 @@
 # open a TCP connection. Nothing else. No Editor, no graphics stack, no shell
 # tooling beyond what the entrypoint needs.
 #
-# Why this matters at 50 pods: every node must pull this image before any work
-# starts. A 3 GB image on a 50-node cold start is minutes of pure latency before the
+# Why this matters at 54 pods: every node must pull this image before any work
+# starts. A 3 GB image on a 54-node cold start is minutes of pure latency before the
 # first raycast; a ~400 MB image is seconds — and at a 3-minute total runtime, image
 # pull is a measurable fraction of the whole pipeline rather than a rounding error.
 #

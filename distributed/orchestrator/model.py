@@ -246,7 +246,15 @@ V1_SECONDS   = 6.0 * 3600
 V1_ROW_RATE  = V1_ROWS / V1_SECONDS                          # ~73k/s
 # Retained under the old name because a great deal of prose and several scripts
 # refer to it; it is the same number, more precisely described.
+# CAREFUL: this is a ROW rate, not a raycast rate. The name predates the
+# rows-vs-raycasts distinction and is kept because prose and scripts refer to it, but
+# dividing a measured RAYCAST rate by it compares two different quantities and
+# overstates the result by 1/RAYCAST_FRACTION (~1.6x). monitor.py did exactly that.
 V1_RAYCAST_RATE = V1_ROW_RATE
+
+# The genuine v1 raycast rate: BVH traversals actually fired per second. Use this one
+# when the numerator is a raycast count.
+V1_BVH_RATE = V1_RAYCASTS / V1_SECONDS                       # ~45.8k/s
 
 # ===========================================================================
 # V2 PER-WORKER RAYCAST RATE
@@ -305,7 +313,7 @@ def shard_max_streams(vcpu: int = None) -> int:
 # there is no shuffle and nothing to move. What remains:
 #   1. derive the per-edge rollup (a shard-local GROUP BY, because a section owns
 #      whole edges — never half of one)
-#   2. index the rollup (14.5M rows/shard, not 789M)
+#   2. index the rollup (16.1M rows/shard, not 876M)
 #   3. ANALYZE, run with vacuumdb --jobs so the leaf partitions go in parallel
 #
 # COPY FREEZE during the load means there is no freeze-vacuum to pay later
@@ -313,12 +321,13 @@ def shard_max_streams(vcpu: int = None) -> int:
 # ===========================================================================
 EDGE_ROLLUP_ROWS_PER_S = 12_000_000   # parallel aggregate, 8 workers, page-cache resident
 INDEX_BUILD_ROWS_PER_S = 600_000      # B-tree, 8 parallel maint. workers, 16 GB maintenance_work_mem
-ANALYZE_SECONDS        = 30           # 3,024 leaves per shard via vacuumdb --analyze --jobs 8
+ANALYZE_SECONDS        = 30           # 3,360 leaves per shard via vacuumdb --analyze --jobs 8
 
 # ===========================================================================
 # FLEET SPIN-UP
 #
-# Counted, not waved away, because at a 12-minute runtime it is 23% of wall clock.
+# Counted, not waved away: at the deployed 11-minute runtime it is 7% of wall clock, and
+# together with ANALYZE_SECONDS it forms the 75 s floor no hardware beats.
 # Warm image cache + engine boot + scene load + whole-city BVH warm.
 # ===========================================================================
 FLEET_STARTUP_SECONDS = 45
@@ -383,7 +392,7 @@ BENCHMARKS = [
      "page-cache resident. Shard-local because a section owns whole edges.",
      "EDGE_ROLLUP_ROWS_PER_S"),
     ("B7", "rollup index build", 600_000, "rows/s",
-     "B-tree on the 14.5M-row rollup, 8 parallel maintenance workers, "
+     "B-tree on the 16.1M-row rollup, 8 parallel maintenance workers, "
      "16 GB maintenance_work_mem.",
      "INDEX_BUILD_ROWS_PER_S"),
     ("B8", "fleet spin-up", 45, "s",
@@ -821,7 +830,7 @@ def report() -> None:
           f"~{RAW_SAMPLES_GB * 1024 / tasks():.0f} MB each")
 
     # The single most important number in this file: what the cluster is worth.
-    # Same 50 workers, same code, one database instead of ten.
+    # Same 54 workers, same code, one database instead of nine.
     t1 = total_seconds(WORKERS, 1)
     print(f"\n    the same {WORKERS} workers on ONE instance: {fmt(t1)} "
           f"({v1_equivalent_seconds() / t1:.1f}x) — {bound_by(WORKERS, 1)}")

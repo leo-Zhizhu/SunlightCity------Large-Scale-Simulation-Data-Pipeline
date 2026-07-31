@@ -413,7 +413,7 @@ Full setup, including the Unity project download: [`../SetUp Guide.md`](../SetUp
 | **Rows** | 1,577,374,560 | **7,886,872,800** |
 | Raycast call | `Physics.Raycast`, main thread, one at a time | `RaycastCommand.ScheduleBatch`, job system, a timestep at a time |
 | Work unit | a bounding box, run to completion | (section, date, 3 h window) — 30,240 leased tasks |
-| Databases | 1 | 1 coordinator + 10 data shards |
+| Databases | 1 | 1 coordinator + 9 data shards |
 | Wire format | CSV text, one string per row | binary COPY from a bitset, no allocation |
 | Wall clock | 6 h 00 min (12 dates) | 11 min 38 s (60 dates) |
 | Failure recovery | restart the export (it resumes) | per-task, automatic, no coordinator |

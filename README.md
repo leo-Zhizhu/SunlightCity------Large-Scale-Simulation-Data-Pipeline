@@ -433,7 +433,7 @@ AND t.shard_index = ANY (SELECT meo_admissible_shards(run_id))
 ```
 
 **Affinity turns 30,240 working-set loads into 504.** Every task in a (section, window)
-group shares its geometry and BVH pages, and there are twelve dates per group. The hints
+group shares its geometry and BVH pages, and there are 60 dates per group. The hints
 are advisory — if nothing matches, the claim falls through to LPT, so affinity can never
 stall the queue.
 
@@ -662,7 +662,7 @@ Stated plainly, because they are visible in the published data.
   placeholders in the K8s manifests. Per-shard credentials would be more rigorous and
   would buy nothing but eleven secrets to rotate in lockstep.
 - **The performance figures are derived from a calibrated model**, not a stopwatch on a
-  50-node cluster. The v1 baseline is measured; the per-worker multipliers and the
+  54-node cluster. The v1 baseline is measured; the per-worker multipliers and the
   ingest rate are the model's inputs. `reduce_finalize.py` prints achieved against
   modelled at the end of every run so the first real deployment replaces them. What the
   model omits, and in which direction it errs, is in

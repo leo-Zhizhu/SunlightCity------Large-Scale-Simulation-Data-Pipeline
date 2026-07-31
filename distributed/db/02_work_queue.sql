@@ -216,7 +216,7 @@ $$ LANGUAGE sql STABLE STRICT;
 --    over that window's azimuth arc — are a working set the worker has already
 --    paged in. There are 84 x 6 = 504 such working sets but 30,240 tasks, so
 --    dispatching a task that matches the caller's current (section, window) reuses
---    the warm set twelve times out of twelve instead of once.
+--    the warm set 60 times out of 60 -- one per date -- instead of once.
 --
 --    Without affinity the fleet would fault in a fresh working set for all 30,240
 --    tasks. With it, 504 times. The parameters are hints: if no matching task is

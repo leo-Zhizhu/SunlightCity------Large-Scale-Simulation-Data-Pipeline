@@ -82,7 +82,7 @@ data:
 
     ; Backends per (database, user). Sized well below the fleet size on purpose:
     ; workers are compute-bound and only intermittently need a backend — a claim is
-    ; milliseconds, then ~1.8 s of raycasting — so 25 backends comfortably serve 54
+    ; milliseconds, then ~0.9 s of raycasting — so 25 backends comfortably serve 54
     ; workers. This is the number that actually protects the coordinator's memory,
     ; and the coordinator is a 32 GB instance rather than a 128 GB one.
     default_pool_size = 25

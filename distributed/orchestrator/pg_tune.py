@@ -387,7 +387,7 @@ def compute(ram_gb: float, cpus: int, workers: int, profile: str, role: str,
         cfg["jit"] = "off"
 
     # ---- Observability ----------------------------------------------------
-    # A claim taking over 200 ms means 50 workers are each waiting that long, so the
+    # A claim taking over 200 ms means 54 workers are each waiting that long, so the
     # coordinator's threshold is far tighter than a shard's.
     cfg["log_min_duration_statement"] = "200" if coord else ("5000" if bulk else "1000")
     cfg["log_checkpoints"] = "on"

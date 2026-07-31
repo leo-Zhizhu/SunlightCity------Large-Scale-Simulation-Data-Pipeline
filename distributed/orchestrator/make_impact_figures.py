@@ -285,7 +285,7 @@ def fig_shard_scaling(theme: str) -> str:
     s.text(56, fy + 20,
            f"One instance absorbs ~{model.shard_max_streams() * model.COPY_ROWS_PER_STREAM / 1e6:.1f}M rows/s "
            f"({model.shard_max_streams()} COPY streams on {model.SHARD_VCPU} vCPU, one busy CPU each). "
-           f"The fleet produces {model.WORKERS * model.WORKER_RAYCAST_RATE / 1e6:.1f}M/s.",
+           f"The fleet produces {model.WORKERS * model.WORKER_ROW_RATE / 1e6:.1f}M rows/s.",
            11, t["ink2"])
     s.text(56, fy + 38,
            f"So the cluster needs at least {kb} to keep up at all. {model.SHARDS} are deployed — "
@@ -311,7 +311,7 @@ def fig_phase_breakdown(theme: str) -> str:
     s = SVG(W, H, t,
             f"Breakdown of the {fmt_t(T)} run: {fmt_t(startup)} fleet spin-up, "
             f"{fmt_t(mapt)} map phase in which writing overlaps raycasting entirely, "
-            f"and {fmt_t(red)} of reduce across ten shards in parallel.")
+            f"and {fmt_t(red)} of reduce across {model.SHARDS} shards in parallel.")
 
     s.text(40, 34, f"Where the {fmt_t(T)} goes", 16, t["ink"], weight="600")
     s.text(40, 55, "Writing is free — it happens while the next window is being "

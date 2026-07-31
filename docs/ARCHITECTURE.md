@@ -285,7 +285,7 @@ Two more concerns share the same function, in priority order:
 **Affinity.** A task's rays all originate in one section during one window, so its
 geometry and BVH pages are a working set the worker already has. There are 84 × 6 = 504
 such working sets but 30,240 tasks, so dispatching a task matching the caller's current
-(section, window) reuses the warm set twelve times out of twelve. Without affinity the
+(section, window) reuses the warm set 60 times out of 60 — one per date. Without affinity the
 fleet would fault in a fresh working set 30,240 times; with it, 504. The hints are
 advisory — if nothing matches, the claim falls straight through to LPT, so affinity can
 never stall the queue or unbalance the cluster.
@@ -359,14 +359,14 @@ and the main loop reaps completions separately from producing them.
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/phase_breakdown_dark.svg">
-  <img src="assets/phase_breakdown_light.svg" alt="Breakdown of the 3 minute 20 second run: 45 seconds spin-up, 1 minute 47 seconds map with writing fully overlapped, 48 seconds reduce" width="850">
+  <img src="assets/phase_breakdown_light.svg" alt="Breakdown of the 11 minute 9 second run: 45 seconds spin-up, 8 minutes 14 seconds map with writing fully overlapped, 2 minutes 10 seconds reduce" width="850">
 </picture>
 </div>
 
 | phase | time | share | |
 |---|---:|---:|---|
-| fleet spin-up | 45 s | 23% | image pull (warm) + engine boot + scene load + BVH warm |
-| **map** | **8m 53s** | **53%** | `max(raycast 8m 53s, write 6m 34s)` — compute-bound |
+| fleet spin-up | 45 s | 7% | image pull (warm) + engine boot + scene load + BVH warm |
+| **map** | **8m 14s** | **74%** | `max(raycast 8m 14s, write 6m 05s)` — compute-bound |
 | reduce | 2m 10s | 19% | nine shards in parallel |
 | **total** | **11m 09s** | | **161× v1** |
 
@@ -375,15 +375,18 @@ a finished window is handed to a writer thread on a second connection while the 
 thread claims the next task. Done in sequence the fleet would spend 42% of its life on
 sockets.
 
-**Spin-up is counted, not waved away.** At a twelve-minute runtime it is 23% of wall
-clock, and pretending otherwise would make the model wrong in the one direction that
-flatters it.
+**Spin-up is counted, not waved away.** It is 7% of wall clock, and together with the
+30 s `ANALYZE` it forms a **75-second floor that no amount of hardware beats** — which is
+why the sizing problem is spending the other 825 s of the budget well
+([PERFORMANCE.md §3](PERFORMANCE.md#3-step-2--the-composed-model-and-the-floor)).
+Pretending otherwise would make the model wrong in the one direction that flatters it.
 
 **Reduce cannot overlap** — it needs the last row — but it is only 2 min because a
 section owns whole edges, so all nine shards roll up locally with no shuffle.
 
-Full numbers, including the honest accounting of the 155× against a 202× theoretical
-ceiling: [PERFORMANCE.md](PERFORMANCE.md).
+Full numbers, including the honest accounting of the 161.5× achieved against a 218.7×
+theoretical ceiling — and the derivation that produced 54 workers and 9 shards in the
+first place: [PERFORMANCE.md](PERFORMANCE.md).
 
 ---
 
@@ -472,7 +475,7 @@ Stated so the first deployment knows what to watch:
    assumption the entire containerisation rests on, which is why
    [DEPLOYMENT.md](DEPLOYMENT.md) puts a two-worker smoke run before the fleet.
 2. **The job system sizes its worker pool from the cgroup quota.** If it reads the
-   host's core count instead, a 50-pod node would oversubscribe badly. This is why the
+   host's core count instead, a 54-pod node would oversubscribe badly. This is why the
    Job requests whole cores.
 3. **`wal_level = minimal` + same-transaction `CREATE` + `COPY` skips WAL.** Documented
    PostgreSQL behaviour; verify with `pg_current_wal_lsn()` before and after one task.

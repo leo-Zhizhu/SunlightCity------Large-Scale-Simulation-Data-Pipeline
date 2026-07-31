@@ -12,9 +12,9 @@ Generate for your own hardware:
 
 ```bash
 python distributed/orchestrator/pg_tune.py --role shard --profile bulk \
-       --ram-gb 128 --cpus 16 --workers 50 --shards 10
+       --ram-gb 128 --cpus 16 --workers 54 --shards 9
 python distributed/orchestrator/pg_tune.py --role shard --profile serving --detect
-python distributed/orchestrator/pg_tune.py --role coordinator --detect --workers 50
+python distributed/orchestrator/pg_tune.py --role coordinator --detect --workers 54
 ```
 
 The three checked-in profiles are verified to match the generator's output exactly — 46,
