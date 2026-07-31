@@ -85,39 +85,66 @@ everything else in this repository.
 
 The table is **fully normalised**: `(sample_point_id, datetime, is_sunlit)`, one row per
 observation carrying one bit. So the row count *is* the observation count — there is no
-array and no column per timestep. That also means 68 bytes on the page per bit of
-payload; the packed alternative, and why it is not used, is in
+array and no column per timestep.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/row_anatomy_dark.svg">
+  <img src="docs/assets/row_anatomy_light.svg" alt="Anatomy of one row: 68 bytes of page — 28 of tuple overhead, 24 of identity, 12 of bookkeeping, 3 of alignment — carrying a single bit of measurement, 0.18 percent payload. Beside it, the multiplication behind the row count: 365,133 sample points times 360 timesteps a day times 60 dates equals 7,886,872,800 rows, which is also exactly 7,886,872,800 observations." width="850">
+</picture>
+</div>
+
+That encoding is expensive, and knowingly so: **68 bytes of page per bit of payload**. The
+packed alternative — lossless, 225× smaller — and why it is not adopted are in
 [DB_CLUSTER.md](docs/DB_CLUSTER.md#what-one-row-is-precisely).
+
+### The question an aggregate cannot answer
+
+Nobody experiences a street at a single instant. A walker enters it, and by the time they
+are halfway across **the shadow has moved** — so walking east and walking west sample
+*different* (sample point, timestamp) pairs against the same advancing clock.
+
+The figure below is one 400 m edge drawn as a **space-time field**: distance along the
+street across, time upwards, and **one cell for every row of `meo_exposure_samples`**. The
+shadow's edge steps 6.8 m to the right at each 3-minute timestep, so the two walks —
+opposite diagonals through that field — cross it in different places and read different
+cells.
 
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/directional_cost_dark.svg">
-  <img src="docs/assets/directional_cost_light.svg" alt="The same 400 metre street at the same instant walked in opposite directions, giving 504 versus 492 seconds of sun and 252 versus 246 metres of continuous exposure" width="850">
+  <img src="docs/assets/directional_cost_light.svg" alt="A space-time field for one 400 metre street: distance across, time upwards, one cell per row of the samples table. The shadow's edge steps 6.8 metres right at every 3-minute timestep, so the forward walk crosses it at 150 metres and the reverse walk at 154 metres, giving 504 versus 492 seconds of sun and 252 versus 246 metres of continuous exposure. A frozen shadow — which is what a per-edge sum assumes — would report 532 seconds for both." width="850">
 </picture>
 </div>
 
-A walker entering a 400 m street at 16:00 reaches the sample 200 m in about two and a
-half minutes later. **By then the shadow has moved.** So walking east and walking west
-sample *different* (sample, time) pairs against the same advancing clock — 504 seconds of
-sun one way against 492 the other, with 252 m of continuous exposure against 246 m, and
-the entry and exit states inverted.
-
-Both directions cross the same samples. A per-edge `sunlit_sum` is **identical** for the
-two. The difference exists only in the ordered series, and
-[`meo_edge_directional_cost()`](distributed/db/03_shard_schema.sql) is what computes it:
+[`meo_edge_directional_cost()`](distributed/db/03_shard_schema.sql) is what reads one of
+those diagonals. The table below **is** the figure above — same edge, same instant, both
+directions, on the fixture that
+[`shard_selftest.sql`](distributed/db/tests/shard_selftest.sql) builds and asserts:
 
 ```sql
-SELECT * FROM meo_edge_directional_cost(:edge_id, '2026-07-15 16:00:00',
-                                        p_reverse := false, p_walk_speed_mps := 1.35);
-```
-```
- sun_seconds | shade_seconds | pct_sun | entered_in_sun | exited_in_sun | longest_sun_run_m
-       207.4 |          90.4 |   69.65 | f              | t             |               280
+SELECT * FROM meo_edge_directional_cost(:edge_id, '2026-06-15 16:00:00',
+                                        p_reverse := false, p_walk_speed_mps := 0.5);
 ```
 
-So `sunlit_sum` is a **derived convenience index** — fine for a Pareto search's coarse
-objective, incapable of the question above — and the 7.89 billion sample rows are the
-thing that cannot be regenerated from anything else.
+| | forward | reverse | |
+|---|---:|---:|---|
+| `sun_seconds` | **504.0** | **492.0** | 12 s more, walking with the sweep |
+| `shade_seconds` | 300.0 | 312.0 | |
+| `pct_sun` | 62.69 | 61.19 | |
+| `entered_in_sun` → `exited_in_sun` | `f` → `t` | `t` → `f` | inverted |
+| `longest_sun_run_m` | 252 | 246 | the number a shade-averse router wants |
+| `timesteps_spanned` | 5 | 5 | the walk is not one instant |
+| per-edge `sunlit_sum` at 16:00 | 133 / 201 | 133 / 201 | **identical — there is no direction in it** |
+
+The fixture walks at 0.5 m/s so that 400 m spans five timesteps and the effect is visible
+in a test that runs in two seconds; the asymmetry itself does not depend on the speed.
+
+Both directions cross the same 201 samples, so that last row cannot tell them apart — it
+is the answer a *frozen* shadow would give, 532 s of sun, which is neither of the real
+two. So `sunlit_sum` is a **derived convenience index** — fine for a Pareto search's
+coarse objective, incapable of the question above — and the 7.89 billion sample rows are
+the thing that cannot be regenerated from anything else.
 
 Which leads directly to the constraint v2 exists to solve: **one PostgreSQL instance
 cannot absorb 7.89 billion rows from 50 concurrent producers.**

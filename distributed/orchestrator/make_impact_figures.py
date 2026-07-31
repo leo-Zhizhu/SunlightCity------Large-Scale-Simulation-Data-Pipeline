@@ -34,9 +34,18 @@ THE RESULT
                         database instance and 11m 09s on nine.
   7. phase_breakdown    where the 11m 09s goes, and why writing is free (it
                         overlaps raycasting) while the reduce phase is not.
-  8. directional_cost   the same edge at the same instant, walked both ways. This
-                        is why the schema keeps per-sample rows.
-  9. failure_timeline   lease-based recovery of a killed worker.
+  8. failure_timeline   lease-based recovery of a killed worker.
+
+WHY THE ROWS ARE KEPT — the pair that carries the README's schema argument.
+
+  9. row_anatomy        one row's 68 bytes against its one bit of payload, and the
+                        multiplication that turns 365,133 sample points into
+                        7,886,872,800 rows.
+ 10. directional_cost   the same edge at the same instant, walked both ways, drawn
+                        as a space-time field in which one cell IS one row. The two
+                        walks are different diagonals through it, so they read
+                        different cells — which is why the schema keeps per-sample
+                        rows. Recomputed from the self-test fixture (see FIXTURE).
 
 Every figure is emitted in light and dark. Check them RASTERISED after any edit —
 overlapping labels and text running off the canvas are invisible in the SVG source
@@ -195,6 +204,137 @@ def fmt_t(seconds: float) -> str:
     if seconds >= 60:
         return f"{int(seconds // 60)}m {seconds % 60:02.0f}s"
     return f"{seconds:.0f} s"
+
+
+def wrap(text: str, size: float, width: float) -> list[str]:
+    """
+    Greedy wrap to a pixel width. SVG.footer() has its own copy for the full-width
+    case; the annotation columns inside the plots are 160-340 px wide and every one
+    of them overran the panel the first time it was positioned by eye.
+    """
+    budget = max(8, int(width / (size * 0.505)))       # measured for this font stack
+    lines, cur = [], ""
+    for word in text.split():
+        if len(cur) + len(word) + 1 > budget:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = f"{cur} {word}".strip()
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+# ===========================================================================
+# THE SELF-TEST FIXTURE, RECOMPUTED — the input to fig_directional_cost.
+#
+# distributed/db/tests/shard_selftest.sql builds two 400 m edges sampled every 2 m
+# and fills window 4 with
+#
+#     is_sunlit := distance_from_start > 400.0 * (k / 59.0)
+#
+# for k = 0..59 — a shadow whose edge starts 135.6 m along the street at 16:00 and
+# steps 400/59 = 6.8 m further right at every 3-minute timestep. Section 7 of that
+# file then walks the edge both ways at 0.5 m/s and asserts the two directions
+# disagree.
+#
+# _walk() below reimplements meo_edge_directional_cost() over that fixture — same
+# snap, same segment weighting, same gaps-and-islands run length — so the figure is
+# drawn from the computation rather than from transcribed labels. _MEASURED holds
+# what the test printed, and the assertion at the bottom fails the build if the two
+# ever part company.
+#
+# 0.5 m/s is the fixture's walking speed, not a realistic one: it makes a 400 m edge
+# span five timesteps, so the effect is visible in a test that runs in two seconds.
+# ===========================================================================
+FIXTURE = dict(
+    length_m=400.0,
+    samples=201,
+    spacing_m=2.0,
+    speed_mps=0.5,
+    entry_minute=960,            # 16:00
+    window_first_minute=900,     # window 4 opens at 15:00
+    window_steps=60,             # k = 0..59
+)
+
+
+def _snap_step(minute: float) -> int:
+    """meo_snap_timestep(), in minutes of the day. floor(x+0.5) rather than round()
+    because PostgreSQL rounds halves away from zero and Python rounds them to even."""
+    k = int((minute - model.START_MINUTE) / model.STEP_MINUTE + 0.5)
+    k = max(0, min(model.STEPS_PER_DAY - 1, k))
+    return model.START_MINUTE + k * model.STEP_MINUTE
+
+
+def _shadow_edge(snapped_minute: int) -> float:
+    """Distance along the edge at which the fixture's shadow ends, at one timestep."""
+    k = (snapped_minute - FIXTURE["window_first_minute"]) // model.STEP_MINUTE
+    return FIXTURE["length_m"] * k / (FIXTURE["window_steps"] - 1)
+
+
+SHADOW_STEP_M = FIXTURE["length_m"] / (FIXTURE["window_steps"] - 1)   # 6.78 m / timestep
+
+
+def _walk(reverse: bool) -> dict:
+    """meo_edge_directional_cost(), over the fixture, for one direction."""
+    f = FIXTURE
+    n, L, sp, v = f["samples"], f["length_m"], f["spacing_m"], f["speed_mps"]
+    seq = []
+    for i in range(n):
+        pos = i * sp                                   # distance_from_start
+        travelled = (L - pos) if reverse else pos      # distance the walker has covered
+        minute = f["entry_minute"] + travelled / v / 60.0
+        step = _snap_step(minute)
+        seq.append(dict(travelled=travelled, pos=pos, step=step,
+                        sunlit=pos > _shadow_edge(step)))
+    seq.sort(key=lambda r: r["travelled"])
+
+    per_sample_s = sp / v                              # each sample stands for its segment
+    n_sun = sum(1 for r in seq if r["sunlit"])
+
+    # Gaps and islands, as the SQL does it: consecutive samples sharing is_sunlit
+    # are one run, measured end to end plus one spacing.
+    longest, i = 0.0, 0
+    while i < len(seq):
+        j = i
+        while j + 1 < len(seq) and seq[j + 1]["sunlit"] == seq[i]["sunlit"]:
+            j += 1
+        if seq[i]["sunlit"]:
+            longest = max(longest, seq[j]["travelled"] - seq[i]["travelled"] + sp)
+        i = j + 1
+
+    return dict(
+        seq=seq,
+        sun_s=n_sun * per_sample_s,
+        shade_s=(n - n_sun) * per_sample_s,
+        sun_n=n_sun,
+        pct=round(100.0 * n_sun / n, 2),
+        entered=seq[0]["sunlit"],
+        exited=seq[-1]["sunlit"],
+        run_m=longest,
+        steps=len({r["step"] for r in seq}),
+        traverse_s=L / v,
+    )
+
+
+FWD, REV = _walk(False), _walk(True)
+
+_MEASURED = {          # printed by shard_selftest.sql section 7
+    "forward": dict(sun_s=504.0, shade_s=300.0, pct=62.69, run_m=252.0,
+                    entered=False, exited=True, steps=5),
+    "reverse": dict(sun_s=492.0, shade_s=312.0, pct=61.19, run_m=246.0,
+                    entered=True, exited=False, steps=5),
+}
+for _name, _w in (("forward", FWD), ("reverse", REV)):
+    for _k, _want in _MEASURED[_name].items():
+        assert _w[_k] == _want, f"{_name}.{_k}: recomputed {_w[_k]}, test printed {_want}"
+
+# What a per-edge sunlit_sum knows: the shadow frozen at the entry instant. Both
+# directions get the same answer from it, and that answer is neither of the real two.
+STATIC_EDGE_M = _shadow_edge(_snap_step(FIXTURE["entry_minute"]))         # 135.6 m
+STATIC_SUN_N = sum(1 for i in range(FIXTURE["samples"])
+                   if i * FIXTURE["spacing_m"] > STATIC_EDGE_M)           # 133 of 201
+STATIC_SUN_S = STATIC_SUN_N * FIXTURE["spacing_m"] / FIXTURE["speed_mps"]  # 532 s
 
 
 # ===========================================================================
@@ -380,97 +520,360 @@ def fig_phase_breakdown(theme: str) -> str:
 
 
 # ===========================================================================
-# FIGURE 3 — why the schema keeps per-sample rows
+# FIGURE 9 — what one row is, and where 7.89 billion of them come from
 #
-# The numbers are the ones distributed/db/tests/shard_selftest.sql asserts, so this
-# figure is a picture of a passing test rather than an illustration of an idea.
+# The README's claim "the row count IS the observation count" is a statement about
+# an encoding, and prose makes it look like a tautology. The left half is the row
+# to scale — 68 bytes of page against one bit of payload — and the right half is
+# the multiplication, so both halves of the claim are visible at once.
+# ===========================================================================
+
+# PostgreSQL 16 heap layout for (UUID, TIMESTAMP, BOOLEAN, INTEGER, BIGINT), all
+# NOT NULL: a 4 B line pointer and a 24 B tuple header, then the columns at their
+# alignments — uuid is char-aligned so it sits at 24, timestamp needs 8 so it lands
+# at 40, is_sunlit takes a whole byte at 48, and section_id's 4-byte alignment
+# strands 3 bytes of padding. 64 B of tuple, 68 B of page. The measured heap in
+# DB_CLUSTER.md is 68.3 B/row; the 0.3 is page slack.
+ROW_LAYOUT = [
+    ("page + tuple header", 28, "overhead"),
+    ("sample_point_id + datetime", 24, "identity"),
+    ("is_sunlit", 1, "payload"),
+    ("alignment", 3, "pad"),
+    ("section_id + task_id", 12, "bookkeeping"),
+]
+assert sum(b for _, b, _ in ROW_LAYOUT) == model.SAMPLE_ROW_BYTES
+
+PACKED_RATIO = 225      # measured, DB_CLUSTER.md: BIT(360) per (sample point, date)
+
+
+def fig_row_anatomy(theme: str) -> str:
+    t = THEMES[theme]
+    W, H = 860, 430
+    rows = model.EXPOSURE_ROWS
+    bits = model.SAMPLE_ROW_BYTES * 8
+
+    s = SVG(W, H, t,
+            f"Anatomy of one row: {model.SAMPLE_ROW_BYTES} bytes of page carrying a "
+            f"single bit of measurement, 0.18% payload. And the multiplication behind "
+            f"the row count: {model.SAMPLE_POINTS:,} sample points x "
+            f"{model.STEPS_PER_DAY} timesteps a day x {model.DAYS} dates = {rows:,} "
+            f"rows, which is also exactly {rows:,} observations.")
+
+    s.text(40, 34, f"One row, one bit — and where {rows:,} of them come from",
+           16, t["ink"], weight="600")
+    s.text(40, 55, "The table is fully normalised, so the row count IS the observation "
+                   "count. That identity is a property of this encoding, not an "
+                   "inevitability.", 11.5, t["muted"])
+    s.text(W - 40, 34, "SCHEMA · 03_shard_schema.sql", 9.5, t["muted"], anchor="end",
+           weight="600")
+
+    # ---- left: the row, to scale ------------------------------------------
+    s.rect(40, 76, 398, 246, t["panel"], rx=6)
+    s.text(56, 98, "WHAT ONE ROW IS", 10, t["ink2"], weight="700")
+
+    cols = [("sample_point_id", "UUID", "'a1b2…'", 116),
+            ("datetime", "TIMESTAMP", "'2026-06-15 15:00:00'", 152),
+            ("is_sunlit", "BOOLEAN", "true", 86)]
+    x = 56
+    for name, typ, val, cw in cols:
+        payload = name == "is_sunlit"
+        s.rect(x, 108, cw, 36, t["surface"], rx=4,
+               stroke=t["accent"] if payload else t["axis"], sw=1.5 if payload else 1)
+        s.text(x + 8, 123, name, 9.5, t["accent"] if payload else t["ink"],
+               weight="700" if payload else "600", family=MONO)
+        s.text(x + 8, 136, typ, 8.5, t["muted"], family=MONO)
+        s.text(x + 8, 159, val, 9.5, t["ink2"], family=MONO)
+        x += cw + 6
+    for j, ln in enumerate(wrap("The v1 contract, and the whole of it — plus section_id "
+                                "and task_id, bookkeeping that the v1 view hides.",
+                                9, 366)):
+        s.text(56, 175 + j * 11, ln, 9, t["muted"])
+
+    # the same row as bytes on the page
+    s.text(56, 203, "The same row as bytes on the page", 11, t["ink"], weight="600")
+    bx, bw, by, bh = 56, 366, 210, 26
+    ppb = bw / model.SAMPLE_ROW_BYTES
+    fills = {"overhead": t["v1"], "identity": t["v2"], "payload": t["accent"],
+             "pad": t["grid"], "bookkeeping": t["v2_light"]}
+    inks = {"overhead": t["on_v1"], "identity": t["on_v2"], "bookkeeping": t["ink"]}
+    x = bx
+    payload_cx = None
+    for label, nbytes, kind in ROW_LAYOUT:
+        w = nbytes * ppb
+        s.rect(x, by, max(w - 0.8, 1.2), bh, fills[kind])
+        if kind == "payload":
+            payload_cx = x + w / 2
+        elif w > 44:
+            s.text(x + 6, by + 13, f"{nbytes} B", 10, inks[kind], weight="700")
+            s.text(x + 6, by + 23, kind, 8.5, inks[kind], opacity=0.85)
+        x += w
+    s.rect(bx, by, bw, bh, "none", stroke=t["axis"], sw=1, rx=2)
+
+    # The payload is 5 px wide at this scale, which is the point — so it gets a
+    # leader down to a magnified byte rather than a label it has no room for. The
+    # lit bit is the 5th of the 8 so that it lands under the leader.
+    zy = 258
+    s.line(payload_cx, by + bh, payload_cx, zy - 6, t["accent"], 1.2, dash="2 2")
+    cell, lit = 11, 4
+    zx = payload_cx - cell * lit
+    for i in range(8):
+        s.rect(zx + i * cell, zy, cell - 1.5, 14,
+               t["accent"] if i == lit else t["surface"],
+               stroke=None if i == lit else t["axis"], sw=1)
+    s.text(zx - 8, zy + 11, "is_sunlit", 8.5, t["muted"], anchor="end", family=MONO)
+    s.text(payload_cx, zy + 28, "1 bit of measurement", 9.5, t["accent"],
+           anchor="middle", weight="700")
+    s.text(56, zy + 48,
+           f"{bits} bits stored per row · 1 measured · 0.18% payload", 11, t["ink"])
+    s.text(56, zy + 63,
+           f"At {rows:,} rows that is ~{model.RAW_SAMPLES_GB:.0f} GB of heap.",
+           9.5, t["muted"])
+
+    # ---- right: the multiplication ----------------------------------------
+    s.rect(452, 76, 368, 246, t["panel"], rx=6)
+    s.text(468, 98, "WHERE THE ROW COUNT COMES FROM", 10, t["ink2"], weight="700")
+
+    gx, gw = 646, 158            # glyph gutter
+    factors = [
+        (f"{model.SAMPLE_POINTS:,}", "sample points, 2 m apart", "points"),
+        (f"× {model.STEPS_PER_DAY}", "timesteps a day · 03:00-21:00, every 3 min", "steps"),
+        (f"× {model.DAYS}", f"dates · 5 a month ({model.V1_DAYS} in v1)", "dates"),
+    ]
+    for i, (num, label, glyph) in enumerate(factors):
+        y = 118 + i * 44
+        s.text(468, y + 14, num, 15, t["ink"], weight="700", family=MONO)
+        for j, ln in enumerate(wrap(label, 9, 172)):
+            s.text(468, y + 28 + j * 11, ln, 9, t["muted"])
+        cy = y + 12
+        if glyph == "points":
+            # a street, sampled: the dots are what the row count counts. They are
+            # interpolated along the same vertex list the street is drawn from,
+            # because eyeballing them off it left them floating beside the line.
+            v = [(gx, cy + 8), (gx + gw / 3, cy - 7),
+                 (gx + 2 * gw / 3, cy + 6), (gx + gw, cy - 5)]
+            s.path("M " + " L ".join(f"{a:.1f} {b:.1f}" for a, b in v), t["axis"], sw=6)
+            for k in range(19):
+                fr = k / 18 * (len(v) - 1)
+                i0 = min(int(fr), len(v) - 2)
+                u = fr - i0
+                s.circle(v[i0][0] + (v[i0 + 1][0] - v[i0][0]) * u,
+                         v[i0][1] + (v[i0 + 1][1] - v[i0][1]) * u, 2.2, t["v2"])
+        elif glyph == "steps":
+            for k in range(30):
+                tx = gx + gw * k / 29
+                s.line(tx, cy - 8, tx, cy + 8, t["v2"], 1.6, opacity=0.85)
+        else:
+            for k in range(model.DAYS):
+                s.rect(gx + (k % 20) * 8, cy - 11 + (k // 20) * 8, 6, 6, t["v2"], rx=1)
+
+    s.line(468, 254, 804, 254, t["axis"], 1)
+    s.text(468, 280, f"= {rows:,}", 20, t["v2"], weight="700", family=MONO)
+    s.text(468, 298, "rows — and, identically, observations.", 10.5, t["ink"])
+    s.text(468, 313, "No array. No column per timestep. Nothing packed.", 9.5, t["muted"])
+
+    # ---- bottom: the two runs, and the encoding not taken -----------------
+    s.rect(40, 336, 780, 74, t["panel"], rx=6)
+    barx, barw = 138, 116
+    for i, (tag, n, gb, colour) in enumerate((
+        (f"v1 · {model.V1_DAYS} dates", model.V1_ROWS, model.V1_MEASURED_GB, t["v1"]),
+        (f"v2 · {model.DAYS} dates", rows, model.RAW_SAMPLES_GB, t["v2"]),
+    )):
+        y = 352 + i * 24
+        s.text(56, y + 11, tag, 9.5, t["ink2"], weight="600")
+        s.rect(barx, y + 1, barw * n / rows, 12, colour, rx=2)
+        s.text(barx + barw + 10, y + 11, f"{n:,} rows · ~{gb:.0f} GB", 9.5, t["ink"],
+               family=MONO)
+
+    s.line(460, 346, 460, 400, t["axis"], 1)
+    s.text(476, 358, "THE COST, KNOWINGLY ACCEPTED", 9, t["ink2"], weight="700")
+    note = (f"Let the bit's position carry the timestamp and the same {rows / 1e9:.2f} "
+            f"billion observations fit in {model.RAW_SAMPLES_GB / PACKED_RATIO:.1f} GB "
+            f"— {PACKED_RATIO}× smaller, and lossless. It is not adopted because v1's "
+            f"three columns are the contract; DB_CLUSTER.md measures what that costs.")
+    for j, ln in enumerate(wrap(note, 9.5, 328)):
+        s.text(476, 373 + j * 12, ln, 9.5, t["muted"])
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 10 — why the schema keeps per-sample rows
+#
+# Drawn from the fixture recomputation above, which is checked against what
+# distributed/db/tests/shard_selftest.sql printed — so this figure is a picture of
+# a passing test rather than an illustration of an idea.
+#
+# The space-time field is the load-bearing part. Prose has to assert that the two
+# walks "sample different (sample, time) pairs"; a plot of position against time
+# shows it, because one cell of the field is one row of the table and the two walks
+# are visibly different diagonals through it.
 # ===========================================================================
 def fig_directional_cost(theme: str) -> str:
     t = THEMES[theme]
-    W, H = 860, 400
-    s = SVG(W, H, t,
-            "The same 400 m street at the same instant, walked in opposite directions. "
-            "Walking with the moving shadow gives 504 seconds of sun and a 252 m "
-            "continuous exposure; walking against it gives 492 seconds and 246 m. A "
-            "per-edge sum cannot tell the two apart.")
+    f = FIXTURE
+    L, T = f["length_m"], FWD["traverse_s"]
 
-    s.text(40, 34, "Why a per-edge sum is not enough", 16, t["ink"], weight="600")
-    s.text(40, 55, "Same street, same instant, opposite directions. The walker moves "
-                   "through time, so the shadow moves too.", 11.5, t["muted"])
+    # The closing paragraph is wrapped before the canvas is sized, so editing its
+    # wording cannot push it off the bottom of the figure.
+    W = 860
+    CY = 436
+    closing = wrap(
+        f"It is also the frozen answer, {STATIC_SUN_S:.0f} s: the moving shadow costs "
+        f"the forward walker {STATIC_SUN_S - FWD['sun_s']:.0f} s of that and the reverse "
+        f"walker {STATIC_SUN_S - REV['sun_s']:.0f} s. The "
+        f"{FWD['sun_s'] - REV['sun_s']:.0f} s between them exists only in the ordered, "
+        f"per-sample series — which is why v2 keeps v1's {model.EXPOSURE_ROWS:,} sample "
+        f"rows rather than {model.EDGE_ROWS:,} per-edge sums.",
+        11, W - 80 - 32)
+    H = CY + 44 + 16 * len(closing)
+
+    s = SVG(W, H, t,
+            "A space-time field for one 400 metre street: distance along the street "
+            "across, time upwards, and one cell for every row of meo_exposure_samples. "
+            "The shadow's edge steps 6.8 metres right at every 3-minute timestep, so "
+            "the two walks — opposite diagonals through the same field — cross it in "
+            f"different places: {FWD['sun_s']:.0f} seconds of sun one way against "
+            f"{REV['sun_s']:.0f} the other, and {FWD['run_m']:.0f} against "
+            f"{REV['run_m']:.0f} metres of continuous exposure. A per-edge sum reports "
+            f"{STATIC_SUN_S:.0f} seconds for both.")
+
+    s.text(40, 34, "A walk is a diagonal cut through the table", 16, t["ink"],
+           weight="600")
+    s.text(40, 55, "One cell = one row of meo_exposure_samples (2 m × 3 min). Walking "
+                   "east and walking west read different cells.", 11.5, t["muted"])
     s.text(W - 40, 34, "MEASURED · shard_selftest.sql", 9.5, t["muted"], anchor="end",
            weight="600")
 
-    # ---- two street strips -------------------------------------------------
-    # 210 of right margin, not 120: the two number blocks ("504 s / in sun" and
-    # "252 m / longest run") need ~150 px and were running off the canvas.
-    px, pw = 150, W - 150 - 210
-    strip_h = 30
-    N = 40                      # cells drawn; the real edge has 201 sample points
+    # ---- the space-time field ---------------------------------------------
+    PX0, PX1, PY0, PY1 = 92, 636, 92, 300
 
-    rows = [
-        ("with the sweep",  False, 504.0, 300.0, 62.69, 252, 140),
-        ("against it",      True,  492.0, 312.0, 61.19, 246, 232),
-    ]
+    def X(m):
+        return PX0 + (PX1 - PX0) * m / L
 
-    for label, reverse, sun_s, shade_s, pct, run_m, y in rows:
-        s.text(px - 16, y + 12, label, 12, t["ink"], anchor="end", weight="600")
-        s.text(px - 16, y + 27, "entry -> exit", 9.5, t["muted"], anchor="end")
+    def Y(sec):
+        return PY1 - (PY1 - PY0) * sec / T
 
-        cw = pw / N
-        for i in range(N):
-            # The shadow boundary advances as the walker advances: at cell i the
-            # walker is i/N of the way along AND i/N of the way through the traverse,
-            # so the boundary has moved too. Reverse walks the cells from the far end
-            # against the same advancing clock, which is why the pattern differs.
-            frac = i / (N - 1)
-            boundary = frac * 0.62 + 0.19
-            pos = (1.0 - frac) if reverse else frac
-            sunlit = pos > boundary
-            s.rect(px + i * cw, y, cw - 0.6, strip_h,
-                   t["accent"] if sunlit else t["v2_light"],
-                   opacity=0.95 if sunlit else 0.85)
+    # Which timestep each second of the traverse snaps to. Walked rather than
+    # derived: the first and last bands are half-bands because meo_snap_timestep()
+    # rounds to the nearest step, and that is exactly why timesteps_spanned is 5
+    # for a walk that takes four steps' worth of time.
+    bands = []
+    for sec in range(int(T) + 1):
+        step = _snap_step(f["entry_minute"] + sec / 60.0)
+        if bands and bands[-1][0] == step:
+            bands[-1][2] = sec
+        else:
+            bands.append([step, sec, sec])
 
-        s.rect(px, y, pw, strip_h, "none", stroke=t["axis"], sw=1, rx=2)
-        # direction arrow
-        ay = y + strip_h + 12
-        s.line(px, ay, px + pw, ay, t["ink2"], 1)
-        s.path(f"M {px + pw - 7:.1f} {ay - 3.5} L {px + pw:.1f} {ay} "
-               f"L {px + pw - 7:.1f} {ay + 3.5}", t["ink2"], sw=1.4)
+    for step, lo, hi in bands:
+        y0, y1 = Y(min(hi + 1, T)), Y(lo)
+        edge = _shadow_edge(step)
+        s.rect(PX0, y0, X(edge) - PX0, y1 - y0, t["v2_light"], opacity=0.55)
+        s.rect(X(edge), y0, PX1 - X(edge), y1 - y0, t["accent"], opacity=0.30)
+        s.line(PX0, y0, PX1, y0, t["surface"], 1, opacity=0.6)
+        s.text(PX0 - 10, (y0 + y1) / 2 + 3.5,
+               f"{step // 60}:{step % 60:02d}", 9, t["muted"], anchor="end")
 
-        # numbers
-        bx = px + pw + 16
-        s.text(bx, y + 13, f"{sun_s:.0f} s", 14, t["accent"], weight="700")
-        s.text(bx, y + 27, "in sun", 9.5, t["muted"])
-        s.text(bx + 56, y + 13, f"{run_m} m", 12, t["ink"], weight="600")
-        s.text(bx + 56, y + 27, "longest run", 9.5, t["muted"])
+    # 20 m gridlines: a hint of the cell structure. One cell is 2 m wide — 2.7 px
+    # here — so drawing all 201 of them is a grey wash, not a grid.
+    for m in range(20, int(L), 20):
+        s.line(X(m), PY0, X(m), PY1, t["surface"], 0.6, opacity=0.35)
+    s.rect(PX0, PY0, PX1 - PX0, PY1 - PY0, "none", stroke=t["axis"], sw=1)
 
-    # Legend sits in the gap BETWEEN the two strips rather than under the first,
-    # where it was competing with that strip's direction arrow.
-    ly = 200
-    s.rect(px, ly, 14, 10, t["accent"]); s.text(px + 20, ly + 9, "sun", 9.5, t["muted"])
-    s.rect(px + 58, ly, 14, 10, t["v2_light"]); s.text(px + 78, ly + 9, "shade", 9.5, t["muted"])
+    for m in (0, 100, 200, 300, 400):
+        s.line(X(m), PY1, X(m), PY1 + 4, t["axis"], 1)
+        s.text(X(m), PY1 + 17, f"{m}", 9.5, t["muted"], anchor="middle")
+    s.text((PX0 + PX1) / 2, PY1 + 33, "distance along the 400 m edge (m)", 10, t["ink2"],
+           anchor="middle")
+    s.vtext(PY0 - 46, (PY0 + PY1) / 2, "timestep", 10, t["ink2"])
 
-    # ---- the point ---------------------------------------------------------
-    cy = 296
-    s.rect(40, cy, W - 80, 42, t["panel"], rx=6)
-    s.text(56, cy + 18,
-           "Both directions cross the SAME set of sample points and the same total "
-           "sunlit count. A per-edge sunlit_sum is identical for the two.",
-           11, t["ink"])
-    s.text(56, cy + 34,
-           "The 12-second difference and the 6 m difference in continuous exposure exist "
-           "only in the ordered, per-sample series.",
-           11, t["muted"])
+    # What sunlit_sum sees: the shadow frozen at the entry instant.
+    s.line(X(STATIC_EDGE_M), PY0, X(STATIC_EDGE_M), PY1, t["ink2"], 1.4, dash="4 3")
 
-    fy = H - 46
-    s.text(40, fy + 12,
-           f"This is why v2 keeps v1's {model.EXPOSURE_ROWS:,} rows instead of "
-           f"collapsing them to {model.EDGE_ROWS:,} per-edge sums —", 11, t["ink2"])
-    s.text(40, fy + 28,
-           f"and therefore why it needs {model.SHARDS} database instances rather "
-           "than one.", 11, t["ink2"])
+    # ---- the two walks ----------------------------------------------------
+    for w, reverse, dash in ((FWD, False, None), (REV, True, "7 4")):
+        def pos(sec):
+            return (L - f["speed_mps"] * sec) if reverse else f["speed_mps"] * sec
+
+        # The break is where the walk crosses the shadow's edge — taken from the
+        # sample series, so the line and the second counts agree exactly.
+        t_break = w["sun_s"] if w["entered"] else w["shade_s"]
+        for a, b in ((0.0, t_break), (t_break, T)):
+            d = f"M {X(pos(a)):.1f} {Y(a):.1f} L {X(pos(b)):.1f} {Y(b):.1f}"
+            s.path(d, t["surface"], sw=5.5, dash=dash)
+            s.path(d, t["ink"], sw=2.4, dash=dash)
+        s.circle(X(pos(t_break)), Y(t_break), 4.2, t["ink"], stroke=t["surface"], sw=2)
+        # Both callouts go up-and-right of their crossing: up-left of the reverse
+        # crossing is the reverse line itself, and the text sat on top of it.
+        s.text(X(pos(t_break)) + 12, Y(t_break) + (-8 if reverse else 14),
+               f"crosses at {pos(t_break):.0f} m", 9.5, t["ink"], weight="600")
+
+        # Which end each walk starts from, on a chip so it is readable over the
+        # field it sits on.
+        s.circle(X(pos(0)), Y(0), 3.2, t["ink"])
+        chw = 50
+        chx = (X(pos(0)) - 8 - chw) if reverse else (X(pos(0)) + 8)
+        s.rect(chx, PY1 - 20, chw, 14, t["surface"], rx=3, opacity=0.88)
+        s.text(chx + chw / 2, PY1 - 9.5, "reverse" if reverse else "forward", 9,
+               t["ink2"], anchor="middle", weight="600")
+
+    # ---- legend and the point of the dashed line --------------------------
+    ax = 660
+    s.text(ax, PY0 + 8, "the field, one timestep per band", 9, t["ink2"], weight="600")
+    s.rect(ax, PY0 + 16, 30, 10, t["accent"], opacity=0.30)
+    s.text(ax + 36, PY0 + 25, "sun", 9.5, t["muted"])
+    s.rect(ax + 70, PY0 + 16, 30, 10, t["v2_light"], opacity=0.55)
+    s.text(ax + 106, PY0 + 25, "shade", 9.5, t["muted"])
+
+    for i, (lbl, dash, secs) in enumerate((
+            ("forward", None, FWD["sun_s"]), ("reverse", "7 4", REV["sun_s"]))):
+        y = PY0 + 50 + i * 22
+        s.line(ax, y, ax + 26, y, t["ink"], 2.4, dash=dash)
+        s.text(ax + 34, y + 3.5, f"{lbl} — {secs:.0f} s of sun", 9.5, t["ink"])
+
+    ky = PY0 + 98
+    s.line(ax + 12, ky - 8, ax + 12, ky + 8, t["ink2"], 1.4, dash="4 3")
+    s.text(ax + 24, ky + 3.5, "the shadow, frozen at 16:00", 9.5, t["ink2"])
+    for j, ln in enumerate(wrap(
+            f"Its edge steps {SHADOW_STEP_M:.1f} m right every 3 min. Freeze it and "
+            f"both directions read {STATIC_SUN_S:.0f} s — which is exactly what a "
+            f"per-edge sunlit_sum reports.", 9.5, 160)):
+        s.text(ax, PY0 + 126 + j * 12, ln, 9.5, t["muted"])
+
+    # ---- what each walker experiences, in order ---------------------------
+    s.text(40, 352, "The same field, read along each diagonal — what each walker "
+                    "experiences, in order", 11, t["ink"], weight="600")
+    sx, sw_ = 150, 550
+    cw = sw_ / f["samples"]
+    for i, (w, lbl) in enumerate(((FWD, "forward"), (REV, "reverse"))):
+        y = 360 + i * 26
+        s.text(sx - 12, y + 13, lbl, 10.5, t["ink"], anchor="end", weight="600")
+        for j, r in enumerate(w["seq"]):
+            s.rect(sx + j * cw, y, cw + 0.4, 18,
+                   t["accent"] if r["sunlit"] else t["v2_light"],
+                   opacity=0.95 if r["sunlit"] else 0.85)
+        s.rect(sx, y, sw_, 18, "none", stroke=t["axis"], sw=1, rx=2)
+
+        # where a frozen shadow would have put this direction's boundary
+        static_m = (L - STATIC_EDGE_M) if lbl == "reverse" else STATIC_EDGE_M
+        gx = sx + sw_ * static_m / L
+        s.line(gx, y - 2, gx, y + 20, t["ink"], 1.4, dash="4 3")
+
+        s.text(sx + sw_ + 12, y + 8, f"{w['sun_s']:.0f} s sun", 10.5, t["accent"],
+               weight="700")
+        s.text(sx + sw_ + 12, y + 19, f"{w['run_m']:.0f} m longest run", 9, t["muted"])
+    s.text(40, 424, "Each strip runs from its walker's entry. Dashed: where a frozen "
+                    "shadow would put the boundary — the real one has moved by the "
+                    "time the walker reaches it.", 9, t["muted"])
+
+    # ---- the point --------------------------------------------------------
+    s.rect(40, CY, W - 80, 26 + 16 * len(closing), t["panel"], rx=6)
+    s.text(56, CY + 18,
+           f"Both directions cross the same {f['samples']} samples, so the per-edge "
+           f"sunlit_sum — {STATIC_SUN_N} of {f['samples']} at 16:00 — is identical for "
+           f"the two.", 11, t["ink"])
+    for j, ln in enumerate(closing):
+        s.text(56, CY + 36 + j * 16, ln, 11, t["muted"])
     return s.done()
-
 
 def fig_failure(theme: str) -> str:
     t = THEMES[theme]
@@ -1059,6 +1462,7 @@ def fig_bench_ladder(theme: str) -> str:
 FIGURES = {
     "shard_scaling": fig_shard_scaling,
     "phase_breakdown": fig_phase_breakdown,
+    "row_anatomy": fig_row_anatomy,
     "directional_cost": fig_directional_cost,
     "failure_timeline": fig_failure,
     "feasibility_map": fig_feasibility,
