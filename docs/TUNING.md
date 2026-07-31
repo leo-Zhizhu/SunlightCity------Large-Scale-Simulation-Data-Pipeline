@@ -134,12 +134,13 @@ more than the WAL writes it was meant to avoid.
 
 The two goals only conflict if you conflate them onto one knob:
 
-```
-reduce WAL VOLUME per row   →   wal_level = minimal      (a different knob)
-keep checkpoints RARE       →   max_wal_size = 32GB      (RAISE this one)
-```
+| the goal | the knob | which way |
+|---|---|---|
+| reduce WAL **volume** per row | `wal_level = minimal` | a *different* knob entirely |
+| keep checkpoints **rare** | `max_wal_size = 36GB` | **raise** this one |
 
-`pg_tune.py` scales it from the streams arriving at **that instance** — ten, not fifty.
+`pg_tune.py` scales it from the streams arriving at **that instance** — twelve, not
+fifty-four.
 Sizing it from the fleet was a real error in an earlier version: 54 workers only ever
 produce ten connections to any one shard, so deriving anything per-shard from the fleet
 size was wrong by an order of magnitude. The same correction applies to `work_mem` and

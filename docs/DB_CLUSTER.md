@@ -17,16 +17,15 @@ precisely so that this page cannot drift from it.
 
 ### Demand
 
-```
-sample points                365,133
-timesteps per day                360      03:00-21:00 every 3 min, half-open
-dates                             60      five per month, ~every 6 days
-                          ────────────
-ROWS                   7,886,872,800      the full cross product
-
-per-worker row rate          295,758/s    73,027 x 3.0 batching x 1.35 locality
-fleet of 50               14,787,900/s    ← what the database must absorb
-```
+| | | |
+|---|---:|---|
+| sample points | 365,133 | |
+| timesteps per day | × 360 | 03:00–21:00 every 3 min, half-open |
+| dates | × 60 | five per month, ~every 6 days |
+| **ROWS** | **7,886,872,800** | the full cross product |
+| | | |
+| per-worker row rate | 295,758 /s | 73,027 × 3.0 batching × 1.35 locality |
+| **fleet of 54** | **15,970,917 /s** | **what the cluster must absorb** |
 
 Two figures that are easy to conflate, and only one of them sizes the database:
 
@@ -79,40 +78,12 @@ instances busy, so each one starves.
 
 ## 2. Topology
 
-```
-                        ┌───────────────────┐
-      54 workers  ──────│    PgBouncer      │──────┐   control plane only
-      (claim,           │  transaction mode │      │   thousands of tiny txns
-       heartbeat,       │    2 replicas     │      │
-       complete)       └───────────────────┘      │
-                                                   ▼
-                                        ┌──────────────────────┐
-                                        │    COORDINATOR       │
-                                        │   8 vCPU / 32 GB     │
-                                        │                      │
-                                        │  meo_tasks           │  the queue
-                                        │  meo_runs            │
-                                        │  meo_sections        │  topology
-                                        │  meo_shards          │
-                                        │  meo_edge_sections   │
-                                        │  static geometry     │  authoritative
-                                        │  postgres_fdw ───────┼──┐ analytics
-                                        └──────────────────────┘  │
-                                                                  │
-      54 workers  ─────────── DIRECT, no pooler ──────────┐       │
-      (binary COPY, 2 streams each)                       │       │
-                                                          ▼       ▼
-   ┌──────────────┬──────────────┬─────────────────────────────────────────┐
-   │  shard 0     │  shard 1     │  …                          shard 9     │
-   │ 16 vCPU      │              │                                          │
-   │ 128 GB       │              │   ~8 sections each, Hilbert-contiguous   │
-   │ 256 GB NVMe  │              │                                          │
-   │              │              │                                          │
-   │ ~56 GB samples in 3,360 leaves                                           │
-   │ ~0.2 GB derived edge index                                             │
-   │ full static geometry replica (~140 MB)                                 │
-   └──────────────┴──────────────┴─────────────────────────────────────────┘
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/cluster_topology_dark.svg">
+  <img src="assets/cluster_topology_light.svg" alt="The cluster and its two paths. 54 workers reach the coordinator through PgBouncer in transaction mode for the work queue — claim, heartbeat, complete — and reach the 9 data shards directly with binary COPY on two streams each, bypassing the pooler entirely. Each shard is 16 vCPU, 128 GB and 256 GB of NVMe, holding about 9 Hilbert-contiguous sections, 55 GB of samples in 3,360 leaves and running 12 COPY streams. A dashed postgres_fdw arrow runs from the coordinator to the shards for analytics only, never the bulk path." width="900">
+</picture>
+</div>
 
 ### What one row is, precisely
 
@@ -298,24 +269,23 @@ would be and leaves nothing to get subtly wrong.
 
 ## 4. Storage layout inside one shard
 
-```
-meo_exposure_samples_p                      partitioned, LIST (section_id)
-├─ meo_exp_s384                             this shard owns ~8 sections
-│  ├─ meo_exp_s384_20260101_w0              ← one task: 261k rows, ~20 MB
-│  ├─ meo_exp_s384_20260101_w1
-│  │  … 60 dates x 6 windows = 360 leaves
-├─ meo_exp_s385
-│  … 
-└─ ~3,360 leaves total, ~56 GB
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/partition_tree_dark.svg">
+  <img src="assets/partition_tree_light.svg" alt="The two-level partition tree drawn as nested boxes. meo_exposure_samples_p is partitioned by LIST(section_id); each section such as meo_exp_s384 is partitioned by RANGE(datetime) into six 3-hour windows per date; each leaf, such as meo_exp_s384_20260101_w0, holds about 261,000 rows in 17 MB and is written by exactly one task. 84 sections times 60 dates times 6 windows gives 30,240 leaves and 30,240 tasks. Four consequences: no lock contention, zero WAL, COPY FREEZE is legal, and a retry needs no DELETE." width="880">
+</picture>
+</div>
 
-meo_exposure_edges_p                        partitioned, RANGE (datetime), monthly
-└─ 12 partitions/year, ~16.1M rows, ~1.7 GB   ← DERIVED in the reduce phase
+Per shard, that tree comes to **~9 sections × 60 dates × 6 windows = 3,360 leaves**,
+~56 GB. Alongside it:
 
-meo_sample_points, meo_edges, meo_waypoints  full replicas, ~140 MB
-meo_edge_sections                            full map, 6,700 rows
-meo_shard_sections                           this shard's sections + weights
-meo_shard_identity                           which shard this is
-```
+| object | shape | size |
+|---|---|---:|
+| `meo_exposure_edges_p` | `RANGE (datetime)`, monthly — **derived** in the reduce phase | ~16.1M rows, ~1.7 GB |
+| `meo_sample_points`, `meo_edges`, `meo_waypoints` | full replicas | ~140 MB |
+| `meo_edge_sections` | full map, 6,700 rows | |
+| `meo_shard_sections` | this shard's sections + weights | |
+| `meo_shard_identity` | which shard this is | |
 
 **Every shard gets the FULL static geometry**, not only its own sections. It is 140 MB;
 holding all of it means a shard can answer any directional query locally without a round

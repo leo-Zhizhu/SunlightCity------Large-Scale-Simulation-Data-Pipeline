@@ -101,15 +101,17 @@ Raycasting a window takes ~0.88 s. Writing its 261k rows takes ~1.30 s down a *s
 `COPY` stream — but each worker alternates between **two**, so the amortised write cost is
 **~0.65 s** per task. (Both numbers are real and neither is a typo: 1.30 s is the latency a
 `WROTE` log line reports, 0.65 s is the throughput the capacity model uses.) In sequence
-that is ~1.53 s per task and the fleet spends **42% of its life on sockets**.
+that is ~1.53 s per task and the fleet spends **43% of its life on sockets**.
 
 So a finished window is handed to a writer thread on a **second connection**, and the
 main thread immediately claims the next task:
 
-```
-main    │ ray(N) ──────────│ ray(N+1) ─────────│ ray(N+2) ────────
-writer  │        │ COPY(N) ─────────│ COPY(N+1) ────────│
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/write_overlap_dark.svg">
+  <img src="assets/write_overlap_light.svg" alt="Two timelines at the same scale. Sequentially, one connection, three tasks take 4.60 seconds — 0.88 s of ray casting then 0.65 s of writing each — and 43% of it is socket time. Overlapped, with two connections, the writer thread runs COPY for task N while the main thread casts rays for task N+1, so four tasks finish in 3.53 seconds and the writer is idle 26% of the time." width="880">
+</picture>
+</div>
 
 This is why the capacity model costs the map phase as `max(raycast, write)` rather than
 their sum, and why each worker holds exactly two COPY streams.

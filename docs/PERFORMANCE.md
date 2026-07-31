@@ -331,14 +331,14 @@ connection** while the main thread immediately starts the next task. The write o
 happens *during* the computation of batch *N+1*. So the phase costs whichever side is
 slower, not their sum:
 
-```
-compute   8m 14s   ████████████████████████████
-write     6m 05s   ████████████████████         ← runs concurrently, finishes early
-          ───────
-MAP       8m 14s   the compute side is slower, so it sets the pace
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/write_overlap_dark.svg">
+  <img src="assets/write_overlap_light.svg" alt="Two timelines at the same scale. Sequentially, one connection, three tasks take 4.60 seconds — 0.88 s of ray casting then 0.65 s of writing each — and 43% of it is socket time. Overlapped, with two connections, the writer thread runs COPY for task N while the main thread casts rays for task N+1, so four tasks finish in 3.53 seconds and the writer is idle 26% of the time." width="880">
+</picture>
+</div>
 
-Done sequentially the fleet would spend **42% of its life waiting on sockets**. This is also
+Done sequentially the fleet would spend **43% of its life waiting on sockets**. This is also
 why each machine holds two `COPY` connections rather than one — with a single connection it
 could not write batch *N* and queue batch *N+1* at the same time.
 
@@ -356,13 +356,13 @@ does not hide inside another phase — it adds to the total.
 
 Look at which terms contain `W` or `S`, and which do not:
 
-```
-        45           spin-up            no W, no S   ← FIXED
-  26,667/W           ray casting        shrinks with more machines
-   3,286/S           writing            shrinks with more databases
-     898/S           summary + index    shrinks with more databases
-        30           ANALYZE            no W, no S   ← FIXED
-```
+| term | what it is | shrinks with |
+|---:|---|---|
+| `45` | spin-up | **nothing — fixed** |
+| `26,667/W` | ray casting | more machines |
+| `3,286/S` | writing | more databases |
+| `898/S` | summary + index | more databases |
+| `30` | `ANALYZE` | **nothing — fixed** |
 
 Spin-up and `ANALYZE` do not shrink with anything. **75 seconds is therefore the floor at
 any hardware, at any price** — even with infinite machines and infinite databases, a run
@@ -503,17 +503,12 @@ not a cheaper computation, and not a smaller one.
 
 ### Against the throughput ceiling
 
-```
-                        54 workers
-                      ×  3.00  RaycastCommand batching across job threads
-                      ×  1.35  section-coherent BVH working set
-                      ───────
-                        218.7×  raw throughput ceiling
-
-                        161.5×  achieved end to end
-                      ───────
-                          74%   efficiency against the ceiling
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ceiling_waterfall_dark.svg">
+  <img src="assets/ceiling_waterfall_light.svg" alt="A waterfall from the theoretical ceiling to what is achieved. 54 workers times 3.0 batching times 1.35 locality gives a 218.7x raw ceiling; fleet spin-up costs 18.3x, leaving 200.4x; the reduce phase costs a further 38.9x, leaving 161.5x achieved, which is 74% of the ceiling." width="880">
+</picture>
+</div>
 
 The missing 26% is not waste. It is the two phases that do not parallelise with the fleet:
 
@@ -533,12 +528,11 @@ The missing 26% is not waste. It is the two phases that do not parallelise with 
 
 ### The map phase costs `max`, not `sum`
 
-```
-raycast   8m 14s   ████████████████████████████
-write     6m 05s   ████████████████████         ← overlapped; writer idle 26% of the phase
-          ───────
-MAP       8m 14s   compute-bound
-```
+| | | |
+|---|---:|---|
+| raycast | 8m 14s | the compute side |
+| write | 6m 05s | overlapped, so it costs nothing |
+| **MAP = max(...)** | **8m 14s** | **compute-bound** |
 
 Two distinct quantities that are easy to conflate: the **writer is idle 26% of the map
 phase** (6m 05s of work inside an 8m 14s window), and the **cluster has +35% spare ingest

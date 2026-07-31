@@ -56,9 +56,24 @@ carry something the sketch could not: where the time actually goes.
                        cost on every arrow and the one-time setup bracketed off from
                        the run. For V1_PIPELINE.md.
 
+DIAGRAMS — these replaced ASCII sketches, which is why they exist. A text sketch can
+show a hierarchy but not the arithmetic under it, and its box borders drift the moment
+a number changes length.
+
+ 13. cluster_topology  the two paths through the cluster: the control plane through a
+                       pooler, the data plane deliberately bypassing it.
+ 14. partition_tree    the two-level partition tree, and what one-task-one-leaf buys.
+ 15. write_overlap     sequential vs overlapped writing, drawn at the same scale.
+ 16. ceiling_waterfall where the theoretical 218.7x ceiling is lost.
+
 Every figure is emitted in light and dark. Check them RASTERISED after any edit —
 overlapping labels and text running off the canvas are invisible in the SVG source
-and were the only defects found in review both times.
+and have been the only defects found in review every time.
+
+esc() refuses any glyph outside SAFE_NON_ASCII. U+2192 (->), U+2190 (<-), U+2212 (-)
+and U+2264 (<=) all silently rendered as replacement boxes while looking correct in
+the source, so that class of bug is now a generation-time error rather than something
+caught by eye, or not caught at all.
 
 Usage:
     python make_impact_figures.py [output_dir]
@@ -114,8 +129,23 @@ MONO = "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
 import model
 
 
+# Characters verified to render in the FAM / MONO stacks below. Anything outside
+# this set has silently come out as a replacement box at least once — U+2192 (->),
+# U+2190 (<-), U+2212 (minus) and U+2264 (<=) all did, and all of them looked fine
+# in the SVG source. The guard turns that into an error at generation time.
+SAFE_NON_ASCII = set("×·—–°²³½¼¾±≈…‘’“”")
+
+
 def esc(s: str) -> str:
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    s = str(s)
+    bad = {c for c in s if ord(c) > 126 and c not in SAFE_NON_ASCII}
+    if bad:
+        raise ValueError(
+            f"glyph(s) {sorted(bad)!r} in {s!r} are not known to render in this "
+            f"font stack and have come out as replacement boxes before. Use an "
+            f"ASCII equivalent (-> <- - <=) or add to SAFE_NON_ASCII only after "
+            f"checking a rasterised render.")
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 class SVG:
@@ -936,10 +966,10 @@ def fig_v1_dataflow(theme: str) -> str:
     # The tool line is a list: at 8.5 px mono, two script names on one line run off
     # the card, and the card is as narrow as it is on purpose.
     inputs = [
-        ("GEOMETRY · once", "road_graph.json → PostGIS",
+        ("GEOMETRY · once", "road_graph.json -> PostGIS",
          [f"{model.WAYPOINTS:,} waypoints · {model.EDGES:,} edges",
           f"{model.SAMPLE_POINTS:,} sample points at 2 m"],
-         ["RoadGraphExtractor.cs", "  → db_pipeline_initializer.py"]),
+         ["RoadGraphExtractor.cs", "  -> db_pipeline_initializer.py"]),
         ("SUN · once per year", "pvlib ephemeris",
          [f"{MINUTES_PER_YEAR:,} minute positions",
           "indexed in local standard time, never local time"],
@@ -1235,7 +1265,7 @@ def fig_failure(theme: str) -> str:
     # heartbeat ticks — the visual rhythm carries "every 30 s" without the words
     for sec in range(30, 240, 30):
         s.line(sx(sec), ya + 2, sx(sec), ya + bh - 2, t["surface"], 1, opacity=0.5)
-    s.text(sx(0), ya - 10, "│ = heartbeat (30 s)", 9, t["muted"])
+    s.text(sx(0), ya - 10, "| = heartbeat (30 s)", 9, t["muted"])
     # kill
     s.line(sx(240), ya - 14, sx(240), ya + bh + 8, t["bad"], 2)
     s.text(sx(240) + 8, ya - 4, "SIGKILL", 10.5, t["bad"], weight="700")
@@ -1775,7 +1805,415 @@ def fig_bench_ladder(theme: str) -> str:
     return s.done()
 
 
+# ===========================================================================
+# FIGURE 13 — the cluster, and the two paths through it
+#
+# Replaces a 32-line ASCII sketch whose box borders had drifted out of alignment.
+# The thing the sketch could not make obvious is that there are TWO independent
+# paths — a control plane through a pooler and a data plane that deliberately
+# bypasses it — and that the reason is a property of each path's traffic, not an
+# omission. Drawing them as separate lanes makes the asymmetry the first thing seen.
+# ===========================================================================
+def fig_cluster_topology(theme: str) -> str:
+    t = THEMES[theme]
+    W = 900
+    FLEET_X, FLEET_W = 40, 150
+    MID_X, MID_W = 232, 150
+    COORD_X, COORD_W = 424, 200
+    CTRL_Y, CTRL_H = 92, 172
+    SHARD_Y, SHARD_H = 300, 128
+
+    s = SVG(W, 560, t,
+            f"The cluster and the two paths through it. {model.WORKERS} workers reach the "
+            f"coordinator through PgBouncer for the work queue — thousands of tiny "
+            f"transactions — and reach the {model.SHARDS} data shards directly with binary "
+            f"COPY, because a pooler in a bulk byte path would become the bottleneck. The "
+            f"coordinator also reads the shards through postgres_fdw for analytics.")
+
+    s.text(40, 34, "Two paths, and the pooler is on only one of them", 16, t["ink"],
+           weight="600")
+    s.text(40, 55, "The asymmetry is the design: the control plane is many tiny "
+                   "transactions, the data plane is a sustained byte stream.",
+           11.5, t["muted"])
+    s.text(W - 40, 34, f"{model.SHARDS} shards + 1 coordinator", 9.5, t["muted"],
+           anchor="end", weight="600")
+
+    # ---- CONTROL PLANE lane -------------------------------------------------
+    s.rect(FLEET_X - 8, CTRL_Y - 22, W - 72, CTRL_H + 34, t["panel"], rx=8, opacity=0.5)
+    s.text(FLEET_X + 2, CTRL_Y - 8, "CONTROL PLANE", 9, t["v2"], weight="700")
+    s.text(FLEET_X + 108, CTRL_Y - 8, "· thousands of tiny transactions · latency matters",
+           9, t["muted"])
+
+    def card(x, y, w, h, tag, title, lines, accent, mono_from=None, col2=0):
+        """`lines` entries may be a plain string or a (left, right) pair; a pair is
+        drawn as two columns, which is the only way to get them to line up."""
+        s.rect(x, y, w, h, t["surface"], rx=6, stroke=t["axis"], sw=1)
+        s.rect(x, y, 3, h, accent, rx=1.5)
+        s.text(x + 12, y + 17, tag, 8.5, t["muted"], weight="700")
+        s.text(x + 12, y + 34, title, 11.5, t["ink"], weight="600")
+        for i, ln in enumerate(lines):
+            mono = mono_from is not None and i >= mono_from
+            yy = y + 51 + i * 12.5
+            fam = MONO if mono else None
+            if isinstance(ln, tuple):
+                s.text(x + 12, yy, ln[0], 8.8, t["ink2"], family=fam)
+                s.text(x + 12 + col2, yy, ln[1], 8.5, t["muted"])
+            else:
+                s.text(x + 12, yy, ln, 8.8,
+                       t["muted"] if mono else t["ink2"], family=fam)
+
+    card(FLEET_X, CTRL_Y, FLEET_W, 138, "THE FLEET", f"{model.WORKERS} workers",
+         [f"{model.WORKER_VCPU} vCPU / {model.WORKER_GB} GB each",
+          "headless Unity, IL2CPP",
+          "",
+          "claim a task",
+          "heartbeat every 15 s",
+          "report completion"], t["v2"], mono_from=3)
+
+    card(MID_X, CTRL_Y + 26, MID_W, 92, "POOLER", "PgBouncer",
+         ["transaction mode", "2 replicas",
+          f"{model.WORKERS} clients -> ~25 backends"], t["v2"])
+
+    card(COORD_X, CTRL_Y, COORD_W, CTRL_H,
+         "CONTROL", "COORDINATOR",
+         [f"{model.COORD_VCPU} vCPU / {model.COORD_GB} GB · ~200 MB of data",
+          "",
+          ("meo_tasks", "the queue"),
+          ("meo_runs", "frozen config"),
+          ("meo_sections", "topology"),
+          ("meo_shards", "registry"),
+          ("meo_edge_sections", "edge -> section"),
+          ("static geometry", "authoritative"),
+          ("postgres_fdw", "-> analytics")], t["v2"], mono_from=2, col2=112)
+
+    ym = CTRL_Y + 72
+    arrow(s, FLEET_X + FLEET_W + 6, ym, MID_X - 6, ym, t["v2"], 1.6)
+    arrow(s, MID_X + MID_W + 6, ym, COORD_X - 6, ym, t["v2"], 1.6)
+
+    # ---- DATA PLANE lane ----------------------------------------------------
+    n_show, sw_, gap_ = 4, 118, 10
+    sx0 = MID_X + 60
+    s.rect(FLEET_X - 8, SHARD_Y - 44, W - 72, SHARD_H + 60, t["panel"], rx=8, opacity=0.5)
+    s.text(FLEET_X + 2, SHARD_Y - 30, "DATA PLANE", 9, t["accent"], weight="700")
+    s.text(FLEET_X + 96, SHARD_Y - 30,
+           "· one sustained byte stream · throughput matters · NO POOLER",
+           9, t["muted"])
+
+    # The bypass: drawn as a line leaving the fleet card and dropping past the pooler,
+    # because "it goes around PgBouncer" is the whole point.
+    bx = FLEET_X + FLEET_W / 2
+    s.line(bx, CTRL_Y + CTRL_H + 2, bx, SHARD_Y + SHARD_H / 2, t["accent"], 1.8)
+    arrow(s, bx, SHARD_Y + SHARD_H / 2, sx0 - 6, SHARD_Y + SHARD_H / 2,
+          t["accent"], 1.8)
+    s.text(bx + 8, SHARD_Y - 6, f"binary COPY · {model.STREAMS_PER_WORKER} streams per worker",
+           9, t["accent"], weight="600")
+
+    for i in range(n_show):
+        x = sx0 + i * (sw_ + gap_)
+        last = i == n_show - 1
+        label = f"shard {model.SHARDS - 1}" if last else f"shard {i}"
+        if i == n_show - 2:
+            s.text(x + sw_ / 2, SHARD_Y + SHARD_H / 2, "· · ·", 15, t["muted"],
+                   anchor="middle")
+            continue
+        s.rect(x, SHARD_Y, sw_, SHARD_H, t["surface"], rx=6, stroke=t["axis"], sw=1)
+        s.rect(x, SHARD_Y, 3, SHARD_H, t["accent"], rx=1.5)
+        s.text(x + 11, SHARD_Y + 18, label, 10.5, t["ink"], weight="700")
+        for j, ln in enumerate([
+                f"{model.SHARD_VCPU} vCPU · {model.SHARD_GB} GB",
+                "256 GB NVMe",
+                "",
+                f"~{model.SECTIONS / model.SHARDS:.0f} sections",
+                "Hilbert-contiguous",
+                "",
+                f"{model.RAW_SAMPLES_GB / model.SHARDS:.0f} GB samples",
+                f"{model.tasks() // model.SHARDS:,} leaves",
+                f"{model.shard_max_streams()} COPY streams"]):
+            s.text(x + 11, SHARD_Y + 34 + j * 11, ln, 8.3, t["ink2"])
+
+    # ---- the federation arrow: off the coordinator's BOTTOM edge, round to the
+    # last shard. Dashed and grey because it is not part of the run at all.
+    fx = COORD_X + COORD_W - 30
+    lastx = sx0 + (n_show - 1) * (sw_ + gap_) + sw_ / 2
+    s.line(fx, CTRL_Y + CTRL_H + 2, fx, SHARD_Y - 30, t["muted"], 1.2, dash="3 2")
+    s.line(fx, SHARD_Y - 30, lastx, SHARD_Y - 30, t["muted"], 1.2, dash="3 2")
+    arrow(s, lastx, SHARD_Y - 30, lastx, SHARD_Y - 4, t["muted"], 1.2, dash="3 2")
+    s.text(lastx - 10, SHARD_Y - 12,
+           "postgres_fdw · analytics only, never the bulk path", 8.5, t["muted"],
+           anchor="end")
+
+    s.footer(
+        f"The pooler exists because the control plane is ~250,000 tiny UPDATEs over a run, "
+        f"every one on a worker's critical path — exactly what transaction pooling is for. "
+        f"It is absent from the data plane for the opposite reason: PgBouncer is "
+        f"single-threaded, so putting it in front of ~700 MB/s of COPY traffic would make "
+        f"it the bottleneck. Sharding already holds each instance at "
+        f"{model.shard_max_streams()} backends, so there is nothing left for a pooler to "
+        f"solve there.")
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 14 — one task, one partition leaf
+#
+# Replaces the same ASCII tree pasted in three documents. A text tree shows the
+# NESTING but not the arithmetic underneath it, and the arithmetic is the point:
+# the two partition keys are exactly the two coordinates of a task, so the
+# correspondence between a unit of work and a physical relation is one-to-one.
+# ===========================================================================
+def fig_partition_tree(theme: str) -> str:
+    t = THEMES[theme]
+    W = 880
+    X0, Y0 = 44, 96
+    s = SVG(W, 540, t,
+            f"The two-level partition tree. meo_exposure_samples_p is partitioned by "
+            f"LIST(section_id), each section by RANGE(datetime) into {model.TIME_WINDOWS} "
+            f"windows per date, so one leaf is exactly one task: "
+            f"{model.tasks():,} tasks and {model.tasks():,} leaves of ~261k rows each.")
+
+    s.text(40, 34, "One task, one table — and that is what buys everything else",
+           16, t["ink"], weight="600")
+    s.text(40, 55, "The two partition keys are exactly the two coordinates of a unit of "
+                   "work, so the correspondence is one-to-one.", 11.5, t["muted"])
+
+    # Three nested frames, each inset from the last: the visual nesting IS the tree.
+    levels = [
+        (X0, Y0, W - 88, 236, t["v2_light"], "meo_exposure_samples_p",
+         "the logical table every consumer queries", "PARTITION BY LIST (section_id)",
+         "which square kilometre"),
+        (X0 + 26, Y0 + 58, W - 88 - 52, 164, t["v2"], "meo_exp_s384",
+         f"one of {model.SECTIONS} sections · this one at grid (384)",
+         "PARTITION BY RANGE (datetime)", "which date, and which 3 h window"),
+    ]
+    for x, y, w, h, colour, name, sub, key, keynote in levels:
+        s.rect(x, y, w, h, colour, rx=7, opacity=0.16)
+        s.rect(x, y, w, h, "none", rx=7, stroke=colour, sw=1.4)
+        s.text(x + 14, y + 21, name, 12, t["ink"], weight="700", family=MONO)
+        s.text(x + 14 + len(name) * 7.2 + 16, y + 21, sub, 9, t["muted"])
+        s.text(x + 14, y + 38, key, 9.5, t["ink2"], weight="600", family=MONO)
+        s.text(x + 14 + len(key) * 5.9 + 14, y + 38, f"<- {keynote}", 9, t["muted"])
+
+    # The leaves.
+    lx, ly, lw, lh = X0 + 52, Y0 + 112, 168, 46
+    for i, (nm, note) in enumerate([
+            ("meo_exp_s384_20260101_w0", "03:00–06:00"),
+            ("meo_exp_s384_20260101_w1", "06:00–09:00"),
+            ("meo_exp_s384_20260101_w2", "09:00–12:00")]):
+        x = lx + i * (lw + 12)
+        s.rect(x, ly, lw, lh, t["surface"], rx=5, stroke=t["accent"], sw=1.4)
+        s.text(x + 10, ly + 18, nm, 8.6, t["ink"], weight="600", family=MONO)
+        s.text(x + 10, ly + 33, f"{note}  ·  ~261k rows  ·  ~17 MB", 8.3, t["muted"])
+    s.text(lx + 3 * (lw + 12) + 6, ly + 27, "· · ·", 14, t["muted"])
+    s.text(lx, ly + lh + 20,
+           f"{model.SECTIONS} sections × {model.DAYS} dates × {model.TIME_WINDOWS} windows "
+           f"= {model.tasks():,} leaves, and {model.tasks():,} tasks. "
+           f"Each leaf is written by exactly one task, once.", 10, t["ink2"])
+
+    # What the correspondence buys — the reason the figure exists at all.
+    by = Y0 + 260
+    s.text(X0, by, "WHAT THE ONE-TO-ONE CORRESPONDENCE BUYS", 9.5, t["ink"], weight="700")
+    items = [
+        ("no lock contention", "twelve tasks append to twelve\ndifferent files, never the same one"),
+        ("zero WAL", "COPY into a relation created in the\nsame transaction is not logged"),
+        ("COPY … FREEZE is legal", "rows arrive pre-frozen, so no\nvacuum has to revisit them"),
+        ("retry needs no DELETE", "drop the leaf and rebuild it;\nnothing else ever touched it"),
+    ]
+    cw = (W - 88 - 3 * 12) / 4
+    for i, (head, body) in enumerate(items):
+        x = X0 + i * (cw + 12)
+        s.rect(x, by + 12, cw, 62, t["panel"], rx=5)
+        s.text(x + 11, by + 30, head, 10, t["v2"], weight="700")
+        for j, ln in enumerate(body.split("\n")):
+            s.text(x + 11, by + 46 + j * 11, ln, 8.4, t["ink2"])
+
+    s.footer(
+        f"A single flat table keyed on datetime would have needed {model.tasks():,} range "
+        f"bounds in one list and would have serialised every writer on one file. The "
+        f"two-level shape is what makes the leaf both the unit of work and the unit of "
+        f"storage — and partition pruning down to one leaf of ~261k rows is also why the "
+        f"sample table carries no index at all.")
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 15 — why writing is free
+#
+# Replaces two crude two-line sketches. The point needs a real timeline: the
+# sequential alternative drawn above the overlapped one, at the same scale, so the
+# saving is a visible length rather than a claimed percentage.
+# ===========================================================================
+def fig_write_overlap(theme: str) -> str:
+    t = THEMES[theme]
+    W = 880
+    ray = model.rows_per_task() / model.WORKER_ROW_RATE          # ~0.88 s
+    cpy = model.rows_per_task() / model.COPY_ROWS_PER_STREAM     # ~1.30 s, ONE stream
+    amort = model.rows_per_task() / (model.STREAMS_PER_WORKER
+                                     * model.COPY_ROWS_PER_STREAM)  # ~0.65 s
+    seq = ray + amort
+    s = SVG(W, 430, t,
+            f"Why the map phase costs max rather than sum. Sequentially a task would cost "
+            f"{seq:.2f} s — {ray:.2f} s of ray casting plus {amort:.2f} s of writing — and "
+            f"{100 * amort / seq:.0f}% of the fleet's life would be socket time. With the "
+            f"write handed to a second thread on a second connection, three tasks fit in "
+            f"the time two would have taken.")
+
+    s.text(40, 34, "Why writing is free", 16, t["ink"], weight="600")
+    s.text(40, 55, "Same work, same rates. The only change is that the flush runs on its "
+                   "own thread and its own connection.", 11.5, t["muted"])
+    s.text(W - 40, 34, "MEASURED · per task", 9.5, t["muted"], anchor="end", weight="600")
+
+    PX, PW = 132, W - 132 - 168
+    SCALE = PW / (3 * seq)          # three sequential tasks fill the plot width
+
+    def bar(y, x0, dur, colour, label, h=26, op=1.0, txt=None):
+        w = dur * SCALE
+        s.rect(PX + x0 * SCALE, y, w, h, colour, rx=4, opacity=op)
+        if w > 46:
+            s.text(PX + x0 * SCALE + w / 2, y + h / 2 + 4, label, 9.5,
+                   t["on_v2"] if op > 0.7 else t["ink"], anchor="middle", weight="600")
+        if txt:
+            s.text(PX + x0 * SCALE + w + 7, y + h / 2 + 4, txt, 8.6, t["muted"])
+
+    # ---- SEQUENTIAL ---------------------------------------------------------
+    y = 100
+    s.text(40, y - 12, "SEQUENTIAL — one connection", 9.5, t["bad"], weight="700")
+    s.text(40, y + 20, "one thread", 9, t["ink2"])
+    for i in range(3):
+        bar(y, i * seq, ray, t["v2"], f"ray {i}", op=0.85)
+        bar(y, i * seq + ray, amort, t["accent"], "COPY", op=0.85)
+    s.line(PX, y + 40, PX + 3 * seq * SCALE, y + 40, t["bad"], 1.5)
+    s.text(PX + 3 * seq * SCALE / 2, y + 55,
+           f"3 tasks in {3 * seq:.2f} s  ·  {100 * amort / seq:.0f}% of it socket time",
+           10, t["bad"], anchor="middle", weight="700")
+
+    # ---- OVERLAPPED ---------------------------------------------------------
+    y = 212
+    s.text(40, y - 12, f"OVERLAPPED — {model.STREAMS_PER_WORKER} connections",
+           9.5, t["good"], weight="700")
+    s.text(40, y + 20, "main thread", 9, t["ink2"])
+    s.text(40, y + 52, "writer thread", 9, t["ink2"])
+    for i in range(4):
+        bar(y, i * ray, ray, t["v2"], f"ray {i}")
+    for i in range(3):
+        # Each COPY starts when its ray finished and runs on the stream that is free.
+        bar(y + 32, (i + 1) * ray, amort, t["accent"], f"COPY {i}")
+    s.line(PX, y + 74, PX + 4 * ray * SCALE, y + 74, t["good"], 1.5)
+    s.text(PX + 4 * ray * SCALE / 2, y + 89,
+           f"4 tasks in {4 * ray:.2f} s  ·  the writer is idle "
+           f"{100 * (1 - amort / ray):.0f}% of the time",
+           10, t["good"], anchor="middle", weight="700")
+
+    # right-hand numbers
+    bx = PX + PW + 22
+    s.rect(bx, 100, 146, 188, t["panel"], rx=6)
+    rows = [("ray cast", f"{ray:.2f} s", t["v2"]),
+            ("COPY, one stream", f"{cpy:.2f} s", t["accent"]),
+            ("COPY, amortised", f"{amort:.2f} s", t["accent"]),
+            ("", "", None),
+            ("sequential", f"{seq:.2f} s", t["bad"]),
+            ("overlapped", f"{ray:.2f} s", t["good"])]
+    for i, (k, v, c) in enumerate(rows):
+        if not k:
+            continue
+        s.text(bx + 12, 122 + i * 26, k, 9, t["ink2"])
+        s.text(bx + 12, 136 + i * 26, v, 12, c or t["ink"], weight="700")
+
+    s.footer(
+        f"The two figures for writing are both real and neither is a typo: one task's 261k "
+        f"rows take {cpy:.2f} s down a SINGLE stream — which is what a WROTE log line "
+        f"reports — but the worker alternates between {model.STREAMS_PER_WORKER}, so the "
+        f"amortised cost is {amort:.2f} s. That is comfortably inside the {ray:.2f} s the "
+        f"main thread spends on the next task, which is what keeps the pipeline "
+        f"compute-bound. One connection could not do it: batch N could not be flushing "
+        f"while batch N+1 was being queued.")
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 16 — where the theoretical ceiling is lost
+#
+# Replaces an ASCII column of multiplications. A waterfall is the right form here
+# because the two losses are SEQUENTIAL deductions from a ceiling, and naming each
+# one is more useful than the single "74% efficient" the ASCII ended on.
+# ===========================================================================
+def fig_ceiling_waterfall(theme: str) -> str:
+    t = THEMES[theme]
+    W = 880
+    eq = model.v1_equivalent_seconds()
+    ceiling = model.WORKERS * model.BATCH_SPEEDUP * model.LOCALITY_SPEEDUP
+    after_spin = eq / (model.map_seconds() + model.FLEET_STARTUP_SECONDS)
+    achieved = model.speedup()
+
+    s = SVG(W, 470, t,
+            f"Where the theoretical ceiling goes. {model.WORKERS} workers times "
+            f"{model.BATCH_SPEEDUP} batching times {model.LOCALITY_SPEEDUP} locality is a "
+            f"{ceiling:.1f}x ceiling; fleet spin-up costs {ceiling - after_spin:.1f}x and "
+            f"the reduce phase {after_spin - achieved:.1f}x, leaving {achieved:.1f}x "
+            f"achieved, or {100 * achieved / ceiling:.0f}% of the ceiling.")
+
+    s.text(40, 34, "Where the theoretical ceiling goes", 16, t["ink"], weight="600")
+    s.text(40, 55, "Both losses are phases that do not parallelise with the fleet — and "
+                   "naming them is more useful than quoting an efficiency.",
+           11.5, t["muted"])
+    s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
+
+    PX, PY, PW, PH = 96, 100, W - 96 - 210, 208
+    top = ceiling * 1.08
+
+    def sy(v): return PY + PH * (1 - v / top)
+
+    for g in range(0, int(top) + 1, 50):
+        y = sy(g)
+        if y < PY:
+            continue
+        s.line(PX, y, PX + PW, y, t["grid"], 1)
+        s.text(PX - 10, y + 4, f"{g}×", 9.5, t["muted"], anchor="end")
+
+    bars = [
+        ("raw ceiling", ceiling, 0.0, t["v2"], 1.0,
+         f"{model.WORKERS} pods × {model.BATCH_SPEEDUP} × {model.LOCALITY_SPEEDUP}"),
+        ("fleet spin-up", after_spin, ceiling, t["bad"], 0.85,
+         f"-{ceiling - after_spin:.1f}x  ({model.FLEET_STARTUP_SECONDS} s, fixed)"),
+        ("reduce phase", achieved, after_spin, t["bad"], 0.85,
+         f"-{after_spin - achieved:.1f}x  ({fmt_t(model.reduce_seconds())}, scales with shards)"),
+        ("achieved", achieved, 0.0, t["good"], 1.0, "end to end, work-normalised"),
+    ]
+    bw = PW / (len(bars) * 1.6)
+    for i, (label, val, base, colour, op, note) in enumerate(bars):
+        x = PX + (i + 0.3) * (PW / len(bars))
+        lo, hi = (min(val, base), max(val, base)) if base else (0.0, val)
+        s.rect(x, sy(hi), bw, sy(lo) - sy(hi), colour, rx=4, opacity=op)
+        s.text(x + bw / 2, sy(hi) - 22, f"{val:.1f}×", 13, t["ink"], anchor="middle",
+               weight="700")
+        s.text(x + bw / 2, sy(hi) - 8, note, 8.3, t["muted"], anchor="middle")
+        s.text(x + bw / 2, PY + PH + 18, label, 10, t["ink2"], anchor="middle")
+        if base:      # connector from the previous bar's top
+            s.line(x - (PW / len(bars) - bw), sy(base), x, sy(base), t["axis"], 1,
+                   dash="3 2")
+
+    bx = PX + PW + 30
+    s.rect(bx, PY, 154, 116, t["panel"], rx=6)
+    s.text(bx + 14, PY + 24, f"{100 * achieved / ceiling:.0f}%", 26, t["v2"], weight="700")
+    s.text(bx + 14, PY + 44, "of the ceiling", 10, t["ink2"])
+    for i, ln in enumerate(wrap("The missing 26% is not waste. It is two phases that "
+                                "cannot be parallelised away by adding workers.",
+                                8.6, 128)):
+        s.text(bx + 14, PY + 66 + i * 11, ln, 8.6, t["muted"])
+
+    s.footer(
+        f"The ceiling is what the fleet would reach if the run were nothing but ray "
+        f"casting. Spin-up ({model.FLEET_STARTUP_SECONDS} s) does not shrink with anything "
+        f"at all; the reduce phase ({fmt_t(model.reduce_seconds())}) shrinks with shard "
+        f"count but cannot start until the last row lands, so it adds rather than "
+        f"overlaps. Together they are the 75-second floor that no hardware budget beats.")
+    return s.done()
+
+
 FIGURES = {
+    "cluster_topology": fig_cluster_topology,
+    "partition_tree": fig_partition_tree,
+    "write_overlap": fig_write_overlap,
+    "ceiling_waterfall": fig_ceiling_waterfall,
     "shard_scaling": fig_shard_scaling,
     "phase_breakdown": fig_phase_breakdown,
     "row_anatomy": fig_row_anatomy,

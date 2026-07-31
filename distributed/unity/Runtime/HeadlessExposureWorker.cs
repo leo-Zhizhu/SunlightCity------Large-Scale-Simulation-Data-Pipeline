@@ -27,7 +27,7 @@ namespace SunlightCity.Distributed
     /// Raycasting a window takes ~0.88 s. Writing its 261k rows takes ~1.30 s down a
     /// SINGLE COPY stream — but the worker alternates between TWO, so the amortised
     /// write cost is ~0.65 s per task. Run in sequence that is ~1.53 s per task and
-    /// 42% of the fleet's life is spent waiting on sockets. So a finished window is
+    /// 43% of the fleet's life is spent waiting on sockets. So a finished window is
     /// handed to
     /// <see cref="ExposureWriter"/>'s thread and the main thread immediately claims
     /// the next task — which is why a task is COMPLETED one iteration after it is

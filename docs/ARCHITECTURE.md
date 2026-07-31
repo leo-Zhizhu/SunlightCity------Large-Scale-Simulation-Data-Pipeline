@@ -14,22 +14,32 @@ is "raycasting is slow, add machines". That read is wrong, and getting it right
 determines the whole design.
 
 **The schema is fixed at sample-point resolution.** One row per (sample point,
-timestamp), exactly as v1 wrote it, because the downstream router traverses an edge as
-an **ordered, directional sequence**:
+timestamp), exactly as v1 wrote it. The table is **fully normalised** —
+`(sample_point_id, datetime, is_sunlit)`, one row per observation carrying one bit — so
+the row count *is* the observation count. There is no array and no column per timestep:
 
-> A walker entering a 400 m street at 16:00 is still on it minutes later, and by then
-> the shadow has moved. So walking east and walking west sample *different* (sample,
-> time) pairs against the same advancing clock, and the two genuinely differ — 504
-> seconds of sun one way against 492 the other, with 252 m of continuous exposure
-> against 246 m, and the entry and exit states inverted.
->
-> Both directions cross the same samples. A per-edge `sunlit_sum` is **identical** for
-> the two. The difference exists only in the ordered series.
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/row_anatomy_dark.svg">
+  <img src="assets/row_anatomy_light.svg" alt="Anatomy of one row: 68 bytes of page — 28 of tuple overhead, 24 of identity, 12 of bookkeeping, 3 of alignment — carrying a single bit of measurement, 0.18 percent payload. Beside it, the multiplication behind the row count: 365,133 sample points times 360 timesteps a day times 60 dates equals 7,886,872,800 rows, which is also exactly 7,886,872,800 observations." width="850">
+</picture>
+</div>
 
-Read the figure as the table itself: distance along the street across, time upwards, and
-one cell per row of `meo_exposure_samples`. The shadow's edge steps 6.8 m right at every
-3-minute timestep, so the two walks are opposite diagonals that cross it in different
-places.
+That encoding is expensive and knowingly so: **68 bytes of page per bit of payload.** The
+packed alternative — lossless, measured 225× smaller — and the reason it is not adopted
+are in [DB_CLUSTER.md](DB_CLUSTER.md#what-one-row-is-precisely).
+
+### The question an aggregate cannot answer
+
+Nobody experiences a street at a single instant. A walker enters it, and by the time they
+are halfway across **the shadow has moved** — so walking east and walking west sample
+*different* (sample point, timestamp) pairs against the same advancing clock.
+
+The figure below is one 400 m edge drawn as a **space-time field**: distance along the
+street across, time upwards, and **one cell for every row of `meo_exposure_samples`**. The
+shadow's edge steps 6.8 m to the right at each 3-minute timestep, so the two walks —
+opposite diagonals through that field — cross it in different places and read different
+cells.
 
 <div align="center">
 <picture>
@@ -38,12 +48,26 @@ places.
 </picture>
 </div>
 
-Those figures are what
-[`shard_selftest.sql`](../distributed/db/tests/shard_selftest.sql) asserts, and
-[`meo_edge_directional_cost()`](../distributed/db/03_shard_schema.sql) is the function
-that computes them. `sunlit_sum` is therefore a **derived convenience index** — good
-for a Pareto search's coarse objective, incapable of the directional query — and the
-7.89 billion sample rows are the product.
+[`meo_edge_directional_cost()`](../distributed/db/03_shard_schema.sql) is what reads one of
+those diagonals. The table below **is** the figure above — same edge, same instant, both
+directions, on the fixture that
+[`shard_selftest.sql`](../distributed/db/tests/shard_selftest.sql) builds and asserts:
+
+| | forward | reverse | |
+|---|---:|---:|---|
+| `sun_seconds` | **504.0** | **492.0** | 12 s more, walking with the sweep |
+| `shade_seconds` | 300.0 | 312.0 | |
+| `pct_sun` | 62.69 | 61.19 | |
+| `entered_in_sun` → `exited_in_sun` | `f` → `t` | `t` → `f` | inverted |
+| `longest_sun_run_m` | 252 | 246 | the number a shade-averse router wants |
+| `timesteps_spanned` | 5 | 5 | the walk is not one instant |
+| per-edge `sunlit_sum` at 16:00 | 133 / 201 | 133 / 201 | **identical — there is no direction in it** |
+
+That last row is the whole argument. Both directions cross the same sample points, so a
+per-edge sum is **the same number** for the two; the difference exists only in the
+*ordered* series. `sunlit_sum` is therefore a **derived convenience index** — good for a
+Pareto search's coarse objective, incapable of the directional query — and the 7.89
+billion sample rows are the product.
 
 So the row count stands, and the real problem appears:
 
@@ -218,13 +242,12 @@ chances to make it subtly different.
 
 ## 5. One task, one partition leaf
 
-```
-meo_exposure_samples_p
-  PARTITION BY LIST (section_id)              which square kilometre
-    └─ meo_exp_s<section>
-         PARTITION BY RANGE (datetime)        which date and 3 h window
-              └─ meo_exp_s<section>_<date>_w<n>          ONE TASK
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/partition_tree_dark.svg">
+  <img src="assets/partition_tree_light.svg" alt="The two-level partition tree drawn as nested boxes. meo_exposure_samples_p is partitioned by LIST(section_id); each section such as meo_exp_s384 is partitioned by RANGE(datetime) into six 3-hour windows per date; each leaf, such as meo_exp_s384_20260101_w0, holds about 261,000 rows in 17 MB and is written by exactly one task. 84 sections times 60 dates times 6 windows gives 30,240 leaves and 30,240 tasks. Four consequences: no lock contention, zero WAL, COPY FREEZE is legal, and a retry needs no DELETE." width="880">
+</picture>
+</div>
 
 30,240 tasks, 30,240 leaves, ~261k rows and ~20 MB each. That single correspondence buys
 four things at once:
@@ -377,7 +400,7 @@ and the main loop reaps completions separately from producing them.
 
 **Writing is free.** The map phase costs `max(raycast, write)`, not their sum, because
 a finished window is handed to a writer thread on a second connection while the main
-thread claims the next task. Done in sequence the fleet would spend 42% of its life on
+thread claims the next task. Done in sequence the fleet would spend 43% of its life on
 sockets.
 
 **Spin-up is counted, not waved away.** It is 7% of wall clock, and together with the
