@@ -17,19 +17,24 @@ determines the whole design.
 timestamp), exactly as v1 wrote it, because the downstream router traverses an edge as
 an **ordered, directional sequence**:
 
-> A walker entering a 400 m street at 16:00 reaches the sample 200 m in about two and
-> a half minutes later. By then the shadow has moved. So walking east and walking west
-> sample *different* (sample, time) pairs against the same advancing clock, and the two
-> genuinely differ — 504 seconds of sun one way against 492 the other, with 252 m of
-> continuous exposure against 246 m, and the entry and exit states inverted.
+> A walker entering a 400 m street at 16:00 is still on it minutes later, and by then
+> the shadow has moved. So walking east and walking west sample *different* (sample,
+> time) pairs against the same advancing clock, and the two genuinely differ — 504
+> seconds of sun one way against 492 the other, with 252 m of continuous exposure
+> against 246 m, and the entry and exit states inverted.
 >
 > Both directions cross the same samples. A per-edge `sunlit_sum` is **identical** for
 > the two. The difference exists only in the ordered series.
 
+Read the figure as the table itself: distance along the street across, time upwards, and
+one cell per row of `meo_exposure_samples`. The shadow's edge steps 6.8 m right at every
+3-minute timestep, so the two walks are opposite diagonals that cross it in different
+places.
+
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/directional_cost_dark.svg">
-  <img src="assets/directional_cost_light.svg" alt="The same 400 metre street at the same instant walked in opposite directions, giving 504 versus 492 seconds of sun and 252 versus 246 metres of continuous exposure" width="850">
+  <img src="assets/directional_cost_light.svg" alt="A space-time field for one 400 metre street: distance across, time upwards, one cell per row of the samples table. The shadow's edge steps 6.8 metres right at every 3-minute timestep, so the forward walk crosses it at 150 metres and the reverse walk at 154 metres, giving 504 versus 492 seconds of sun and 252 versus 246 metres of continuous exposure. A frozen shadow — which is what a per-edge sum assumes — would report 532 seconds for both." width="850">
 </picture>
 </div>
 
