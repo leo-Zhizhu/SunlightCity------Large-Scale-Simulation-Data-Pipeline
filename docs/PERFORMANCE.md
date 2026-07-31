@@ -3,70 +3,242 @@
 How the deployment was sized, what it achieves, and where the speedup stops.
 
 This document is a **derivation**, not a report. The hardware was not chosen and then
-measured — a deadline was set, the unit rates were benchmarked, and the fleet and cluster
-sizes fall out of the two. Read §1–§6 in order and the numbers in §7 onward are already
-justified.
+measured — a deadline was set, the individual rates were benchmarked, and the fleet and
+cluster sizes fall out of the two. Read §1–§6 in order and the numbers in §7 onward are
+already justified.
+
+**No background is assumed.** §1 fixes the vocabulary, §2 explains what the machines
+actually do before quoting any measurement of it, and every term of art — ray casting,
+BVH, `COPY`, partition, map/reduce — is defined where it first matters. If you already know
+all of it, the derivation itself is four numbers and one division, and §2's last two code
+blocks are the whole of it.
 
 
 ---
 
 ## 1. The requirement
 
-Two things are fixed before any hardware is discussed.
+### The vocabulary, once
+
+Four terms are used throughout and everything else is built from them:
+
+| term | meaning |
+|---|---|
+| **edge** | one street segment between two junctions. Manhattan's road graph has 6,700. |
+| **sample point** | a measuring position along an edge, one every 2 m. 365,133 in total. |
+| **timestep** | one instant the sun is evaluated at — every 3 minutes from 03:00 to 21:00, so 360 per day. |
+| **observation** | the answer for one sample point at one timestep: sunlit, or in shadow. One bit. |
+
+Two more, for the hardware. This document says **machine** and **database** while
+explaining the reasoning, and switches to the project's own names from §4 onward, where it
+starts quoting the code and the deployment:
+
+| plain | in the code, the manifests and §4 onward |
+|---|---|
+| **machine** — one computer casting rays | **worker** (a Kubernetes pod running headless Unity) |
+| **database** — one PostgreSQL instance holding a slice of the results | **shard** |
+
+The end product is a router that finds shady walking routes. That is why the data is kept
+at *sample point* granularity rather than summarised per street: walking an edge from one
+end to the other is not the same experience as walking it backwards. Going one way you may
+start in shadow and end in sun; going the other, the reverse. A single average per street
+throws that away, and the direction is the thing pedestrians actually feel.
+
+### The two things that are fixed
 
 **The work is non-negotiable.** 365,133 sample points × 360 timesteps × 60 dates =
-**7,886,872,800 observations**, at v1's exact schema — one row per (sample point,
-timestamp). The downstream router traverses an edge as an ordered, *directional* sequence
-of sample points, so the per-sample series is the product, not an intermediate. Nothing
-here is aggregated away to make the numbers easier. See
+**7,886,872,800 observations**, stored at v1's exact schema — one row per (sample point,
+timestamp). Nothing is aggregated away to make the numbers easier; the per-sample series
+*is* the product, not an intermediate on the way to something smaller. The full argument,
+including a measurement of what the alternative would have saved, is in
 [DB_CLUSTER.md](DB_CLUSTER.md#what-one-row-is-precisely).
 
-**The deadline is 15 minutes.** A full 60-date run, end to end, spin-up to `ANALYZE`.
+**The deadline is 15 minutes.** A full 60-date run, end to end — from machines starting to
+the last database finishing its wrap-up.
 
-At v1's measured sustained rate the same 60 dates would take **30.0 hours**, so the
-pipeline has to be **120× faster**, work-normalised. That is the whole problem statement.
+### What that implies before any hardware is chosen
 
-Everything below — 54 workers, 9 database instances, 588 vCPU — is an *output*.
+v1 did this on one desktop, and at its measured sustained rate the same 60 dates would take
+**30.0 hours**. So the target demands a **120× speed-up**.
+
+That figure is *work-normalised*, which is worth pausing on because it is easy to inflate.
+v1's actual reference run covered 12 dates in 6 hours; v2 covers 60. Comparing "6 hours" to
+"11 minutes" directly would be comparing two different amounts of work and would flatter v2
+by 5×. So every speed-up quoted in this document is against **what v1 would have needed for
+the same 60 dates** — 30.0 hours, not 6.
+
+Everything below — 54 machines, 9 database instances, 588 vCPU — is an *output* of that
+requirement, not an assumption feeding into it.
 
 ---
 
-## 2. Step 1 — the measurement ladder
+## 2. Step 1 — measuring the pieces
 
-Nine benchmarks, each isolating one lever. `python model.py --bench` prints them with
-their methods; a rate with no provenance is a guess with a decimal point.
+### What we are trying to do, and why it needs measuring at all
 
-| | lever | measured | sets |
+We want to answer one question: **how long does a run take, given N machines doing the
+computing and M databases storing the results?** If we can write that as a formula, we can
+try every combination of N and M and pick the cheapest one that finishes in 15 minutes.
+
+To write that formula we need only a handful of numbers — but they have to be *measured*,
+because the whole exercise is worthless if they are guessed. So this step establishes:
+
+- how fast **one** computing machine produces results,
+- how fast **one** database absorbs them,
+- how long the wrap-up work at the end takes,
+- and what it costs to start and finish, regardless of how many machines there are.
+
+Nine measurements, labelled B1–B9. `python model.py --bench` prints each one with the
+method used to obtain it.
+
+### What the machines are actually doing
+
+The benchmarks only mean something if you know what is being timed, so here is the work in
+plain terms.
+
+The city is cut into **1 km × 1 km tiles** ("sections"), and the day is cut into **six
+3-hour windows**. One unit of work — a **task** — is one tile for one window on one date:
+about 4,347 sample points × 60 timesteps ≈ **261,000 individual questions**, each of the
+form *"at this spot, at this moment, can the sun be seen, or is a building or tree in the
+way?"*
+
+A machine answers one such question by **casting a ray**: drawing a line from the sample
+point toward wherever the sun is at that moment and asking the game engine whether anything
+solid is hit along the way. Hit → that spot is in shadow. Miss → it is sunlit. One bit of
+answer, one row of output.
+
+The naive way to test a ray would be to check it against every piece of geometry in the
+city — the whole building mesh plus 1,280,954 individual tree canopies. Instead the engine
+keeps a **BVH**: a *bounding-volume hierarchy*, a tree of nested boxes in which each box
+encloses everything beneath it. Testing a ray means walking down that tree and discarding
+whole branches whose box the ray misses.
+
+That detail matters later, so it is worth holding on to: the cost of a ray is dominated not
+by arithmetic but by **chasing pointers around memory**, which means it depends heavily on
+whether the part of the tree being walked is already in the CPU's cache. B2 and B3 are both
+consequences of this.
+
+Having answered its ~261,000 questions, the machine sends the resulting rows to a
+PostgreSQL database. Then it claims the next task. When every task is done, each database
+summarises its own rows into a per-edge index, and the run is finished.
+
+So exactly **three** things consume wall-clock time: casting rays, writing rows, and the
+fixed setup and wrap-up around both. The nine benchmarks cover those three, and nothing
+else.
+
+### The nine measurements, grouped by the question each answers
+
+| | measures | result | what it is for |
 |---|---|---:|---|
-| **B1** | v1, one thread, end to end | 73,027 rows/s | `V1_ROW_RATE` |
-| **B2** | batched raycast dispatch | ×3.00 | `BATCH_SPEEDUP` |
-| **B3** | section-local BVH locality | ×1.35 | `LOCALITY_SPEEDUP` |
-| **B4** | one binary `COPY` stream | 200,000 rows/s | `COPY_ROWS_PER_STREAM` |
-| **B5** | streams per instance before contention | 12 | `shard_max_streams()` |
-| **B6** | edge rollup aggregate | 12,000,000 rows/s | `EDGE_ROLLUP_ROWS_PER_S` |
-| **B7** | rollup index build | 600,000 rows/s | `INDEX_BUILD_ROWS_PER_S` |
-| **B8** | fleet spin-up | 45 s | `FLEET_STARTUP_SECONDS` |
-| **B9** | `ANALYZE` the leaf tree | 30 s | `ANALYZE_SECONDS` |
+| **B1** | v1's whole pipeline on one desktop, one thread | 73,027 rows/s | the baseline everything else multiplies |
+| **B2** | speed-up from casting rays in batches | ×3.00 | } **one machine's** |
+| **B3** | speed-up from staying inside one tile | ×1.35 | } output rate |
+| **B4** | one bulk-load connection into PostgreSQL | 200,000 rows/s | } **one database's** |
+| **B5** | how many such connections one database runs | 12 | } intake rate |
+| **B6** | summarising rows into the per-edge index | 12,000,000 rows/s | } the **wrap-up** |
+| **B7** | building an index over that summary | 600,000 rows/s | } at the end |
+| **B8** | machine start → first task claimed | 45 s | } **fixed costs**, |
+| **B9** | refreshing the query planner's statistics | 30 s | } paid once |
 
-Three of them deserve their reasoning stated, because each is a place where the obvious
-number is wrong.
+The rest of this section takes them one at a time: what was measured, how, and — for the
+several where it applies — why the obvious answer would have been the wrong one.
 
-**B1 is the only whole-pipeline measurement.** It is v1's own reference run —
-1,577,374,560 rows in 6.00 h on one desktop, main-thread `Physics.Raycast`, one
-PostgreSQL. Everything else in the table is a microbenchmark, so B1 is what anchors them
-to reality. See [V1_PIPELINE.md](V1_PIPELINE.md).
+### B1 — the anchor
 
-**B2 is 3.0×, not 8×, on an 8 vCPU pod.** `RaycastCommand.ScheduleBatch` fans a whole
-timestep's rays across the job system's threads, but the main thread still schedules,
-completes and folds results, and BVH traversal saturates memory bandwidth well before it
-saturates ALUs. Claiming linear scaling here would have propagated a 2.7× error into every
-figure downstream.
+**B1 is the only measurement of a whole working pipeline.** It is v1's own reference run:
+1,577,374,560 rows in 6.00 hours on a single desktop, casting rays one at a time on the
+main thread, writing to a single PostgreSQL. Everything else in the table is a
+*microbenchmark* — a measurement of one isolated component, which is precise but can easily
+be precise about the wrong thing. B1 is what keeps the others honest, because it is the one
+number that already includes all the overheads nobody thinks to measure. Details in
+[V1_PIPELINE.md](V1_PIPELINE.md).
 
-**B5 is the constraint that produces the cluster.** Sweeping 1→20 concurrent `COPY`
-streams into *distinct* relations on one 16 vCPU instance scales linearly to 12, then
-flattens: a `COPY` backend is one busy CPU, and the WAL writer, checkpointer, bgwriter and
-OS need the rest. *Distinct* relations is what makes it linear at all — streams into one
-relation serialise on its extension lock, which is why every task builds its own partition
-leaf.
+### B2 — casting rays in batches, and why it is 3× and not 8×
+
+v1 asked its questions one at a time: a `Physics.Raycast` call per ray, on the main thread,
+with the other cores idle. Unity offers a better path — `RaycastCommand.ScheduleBatch`,
+which takes a whole *array* of rays and spreads the work across background threads.
+
+On an 8-core machine you might expect close to 8×. It measures **3.0×**, for two reasons
+worth understanding because they recur throughout this document:
+
+1. **The main thread still has work to do.** It builds the array of rays, waits for the
+   batch, then folds the results into the output buffer. That part does not get faster with
+   more cores.
+2. **Ray casting is limited by memory, not arithmetic.** Walking the BVH means following
+   pointers to scattered places in RAM. Extra cores end up waiting on memory rather than
+   computing, so they add much less than their number suggests.
+
+Assuming a clean 8× here would have overstated every downstream figure by 2.7×, which is
+the difference between a plan that works and one that misses the deadline by a factor of
+two.
+
+### B3 — why staying inside one tile is worth 1.35×
+
+Same machine, same number of rays; the only change is *where the rays come from*. Drawn
+from all over the city, each ray walks a different part of the BVH and the cache is useless.
+Drawn from within one 1 km tile, they walk the same small region of the tree over and over,
+and it stays resident in cache.
+
+That is **1.35× for free**, and it is why the city is divided into tiles at all. Tiling
+began as a way to divide up the work; it turns out to be a performance decision too.
+
+### B4 and B5 — what one database can take, and why it forces a cluster
+
+Writing 7.9 billion rows with ordinary `INSERT` statements would be hopeless: each one pays
+for statement parsing and a network round trip. PostgreSQL has a dedicated bulk-load path
+called **`COPY`**, which streams rows continuously down one connection with none of that
+per-row overhead. Throughout this document, **"a stream" means one connection actively
+running a `COPY`**. B4 measures one: **200,000 rows/s**.
+
+The obvious next thought is that a bigger machine simply runs more streams. B5 tests it, by
+sweeping 1 → 20 concurrent streams on one 16-core instance. Throughput rises linearly to
+**12** and then flattens. Two things explain that, and both matter later:
+
+- **Each `COPY` is handled by one server process, which keeps one CPU busy.** So an
+  instance cannot usefully run more streams than it has cores — minus the cores needed by
+  PostgreSQL's own background processes (the ones that flush the write-ahead log, write
+  dirty pages to disk, and run checkpoints) and by the operating system. On 16 cores that
+  leaves about 12.
+- **It only scales linearly if the streams write to *different tables*.** Appending to a
+  table means growing its file, and PostgreSQL protects that with a lock. Two streams
+  appending to the same table take turns holding it, so they stop overlapping and the
+  second one buys nothing. This is precisely why every task creates **its own table** —
+  technically a *partition*, one slice of a larger logical table — and loads into that. The
+  twelve tasks in flight on an instance write to twelve separate partitions and never
+  contend; twelve tasks writing to one shared table would be very nearly serial, and B5's
+  linear scaling would collapse to a flat line at 200,000 rows/s.
+
+**B5 is the measurement that produces the whole database cluster.** One instance tops out
+at `12 × 200,000 = 2.4 million rows/s`, and §3 shows that is nowhere near enough.
+
+### B6, B7, B9 — the wrap-up
+
+Once every row has landed, each database does three things to its **own** rows, with no
+data moving between instances:
+
+- **B6, the summary.** Alongside the directional query, the router also asks the cheap
+  question "how sunlit is this edge right now" — a count over the sample points belonging
+  to that edge. Computing it once, up front, turns a repeated scan into a single lookup.
+  Each database can do this **alone**, with no data crossing the network, because a tile
+  owns *whole* edges — never half of one. That is a deliberate choice in how tiles are
+  assigned, and §7 shows what it saves.
+- **B7, indexing that summary.** ~16 million rows per instance, not 876 million, because it
+  is a summary.
+- **B9, `ANALYZE`.** PostgreSQL chooses how to execute a query using statistics about the
+  data. After a bulk load those statistics are stale, and a stale-statistics query plan can
+  be thousands of times slower than the right one. `ANALYZE` refreshes them. It takes ~30 s
+  and, importantly, **does not get faster with more hardware** — which is why it shows up in
+  §3 as part of an irreducible floor.
+
+### B8 — the cost of starting
+
+45 seconds from a machine being scheduled to it claiming its first task: process start,
+game engine boot, loading the city model, and warming the BVH. It is counted rather than
+ignored, because at an 11-minute target it is not negligible, and leaving it out would make
+the model wrong in the one direction that flatters it.
+
+### Putting the measurements together
 
 <div align="center">
 <picture>
@@ -75,23 +247,67 @@ leaf.
 </picture>
 </div>
 
-Composed, the two chains that have to meet:
+Two chains, one for each side of the pipeline:
 
 ```
-fleet    B1 × B2 × B3        73,027 × 3.00 × 1.35  =    295,758 rows/s per worker
-cluster  B4 × B5            200,000 × 12          =  2,400,000 rows/s per instance
-
-one instance sustains  2,400,000 / 295,758  =  8.11 workers' output
-at 2 COPY streams per worker, it therefore feeds  12 / 2  =  6 workers
+ONE MACHINE PRODUCES      B1 × B2 × B3    73,027 × 3.00 × 1.35  =    295,758 rows/s
+ONE DATABASE ABSORBS      B4 × B5        200,000 × 12           =  2,400,000 rows/s
 ```
 
-That last ratio is the single most consequential number in the design. **W = 6S** — and
-every structural decision downstream, including the queue's admission arithmetic, follows
-from it.
+Those two numbers are in the same units, so they can be divided — and that division is the
+most consequential step in the entire design:
+
+```
+2,400,000 / 295,758  =  8.11     one database can keep up with 8.11 machines' output
+```
+
+But 8.11 is a ratio of *rates*, and there is a second, stricter limit: **connections**.
+Each machine holds **two** `COPY` connections rather than one, alternating between them so
+that writing the last batch overlaps computing the next (§3 explains why). B5 caps a database
+at twelve streams, so:
+
+```
+12 streams / 2 streams per machine  =  6 machines per database
+```
+
+**Six is smaller than 8.11, so six is the binding limit** — and that gap is not waste, it is
+where a number quoted throughout the rest of this document comes from. Six machines demand
+`6 × 295,758 = 1,774,546 rows/s` from a database that can absorb 2,400,000:
+
+```
+2,400,000 / 1,774,546  =  1.35     +35% spare ingest capacity
+```
+
+So at this ratio every database's connections are fully used while its throughput is only
+74% consumed. That **+35% ingest headroom** is what absorbs a checkpoint, an autovacuum, or
+a transiently slow instance without the machines ever having to wait — and §5 turns it into
+an explicit sizing condition.
+
+**The upshot: fleet size and cluster size are not independently choosable. W = 6S.** Every
+structural decision downstream follows from this one ratio, including the work queue's
+admission rule, which comes out exactly even because of it (§6).
 
 ---
 
-## 3. Step 2 — the composed model, and the floor
+## 3. Step 2 — assembling the pieces into one formula
+
+### The three phases of a run
+
+In time order:
+
+1. **Spin-up.** All the machines start at once. Nothing is computed yet. Fixed cost, B8.
+2. **Map.** The machines work through the 30,240 tasks, casting rays and writing rows,
+   until the queue is empty. This is the bulk of the run and the only phase that gets
+   faster with more machines.
+3. **Reduce.** Once the last row has landed, each database builds its summary, indexes it,
+   and refreshes its statistics (B6, B7, B9). This gets faster with more *databases*, not
+   more machines.
+
+("Map" and "reduce" are the conventional names for these two shapes of work: map = the same
+independent operation applied to many pieces of data; reduce = combining results
+afterwards.)
+
+With `W` machines and `S` databases, and the rates from §2:
 
 ```
 T(W,S)  =   45   +   max( 26,667/W , 3,286/S )   +   898/S + 30
@@ -100,13 +316,60 @@ T(W,S)  =   45   +   max( 26,667/W , 3,286/S )   +   898/S + 30
                          \____ overlap: max() ____/
 ```
 
-The map phase costs `max`, not `sum`, because a finished window goes to a writer thread on
-a second connection while the main thread claims the next task. Run in sequence the fleet
-would spend 42% of its life on sockets.
+Reading the middle terms: the total work is 7.89 billion rows. Divided by one machine's
+295,758 rows/s that is **26,667 machine-seconds** of ray casting, so `W` machines take
+`26,667/W`. Divided by one database's 2.4 million rows/s it is **3,286 database-seconds** of
+writing, so `S` databases take `3,286/S`.
 
-**The irreducible floor is 75 s.** Spin-up (B8) and `ANALYZE` (B9) shrink with neither
-workers nor shards. They are 8% of the budget at any hardware, so the entire sizing problem
-is spending the remaining **825 s** well. No configuration, at any price, beats 75 s.
+### Why the map phase costs `max`, not the sum
+
+The natural assumption is that a machine computes a batch, then writes it, then computes the
+next — in which case the map phase would cost ray-casting **plus** writing.
+
+It does not, because writing is handed to a **second thread on a second database
+connection** while the main thread immediately starts the next task. The write of batch *N*
+happens *during* the computation of batch *N+1*. So the phase costs whichever side is
+slower, not their sum:
+
+```
+compute   8m 14s   ████████████████████████████
+write     6m 05s   ████████████████████         ← runs concurrently, finishes early
+          ───────
+MAP       8m 14s   the compute side is slower, so it sets the pace
+```
+
+Done sequentially the fleet would spend **42% of its life waiting on sockets**. This is also
+why each machine holds two `COPY` connections rather than one — with a single connection it
+could not write batch *N* and queue batch *N+1* at the same time.
+
+Whichever side is slower is called the **binding constraint**. The entire point of sizing
+the database cluster correctly is to keep that constraint on the *compute* side, where
+adding machines helps. If the write side becomes slower, extra machines just queue up and
+buy nothing — the failure mode §9 is about.
+
+### Why reduce adds instead of overlapping
+
+Reduce cannot start early: summarising rows requires all the rows. So unlike writing, it
+does not hide inside another phase — it adds to the total.
+
+### The floor: 75 seconds that no amount of money removes
+
+Look at which terms contain `W` or `S`, and which do not:
+
+```
+        45           spin-up            no W, no S   ← FIXED
+  26,667/W           ray casting        shrinks with more machines
+   3,286/S           writing            shrinks with more databases
+     898/S           summary + index    shrinks with more databases
+        30           ANALYZE            no W, no S   ← FIXED
+```
+
+Spin-up and `ANALYZE` do not shrink with anything. **75 seconds is therefore the floor at
+any hardware, at any price** — even with infinite machines and infinite databases, a run
+cannot finish faster than that.
+
+Against a 900-second deadline, that leaves **825 seconds** to be bought with hardware. The
+whole of the rest of this document is about spending those 825 seconds well.
 
 ---
 

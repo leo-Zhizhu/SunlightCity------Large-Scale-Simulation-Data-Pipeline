@@ -166,17 +166,12 @@ right tool for one neighbourhood or a quick check. **Full detail:
 | Written | 110 GB, with two indexes maintained inline |
 | Peak RAM | ~250 MB, **flat** — one day or a full year costs the same |
 
-```
-city mesh ──▶ RoadGraphExtractor ──▶ road_graph.json ──▶ PostGIS geometry
-                                                              │
-              pvlib ephemeris (525,600 minute positions) ──────┤
-              tree shade (a PostGIS spatial join, not rays) ───┤
-                                                              ▼
-                                        Unity: sweep time, raycast, COPY
-                                                              │
-                              meo_exposure_samples  1.577e9 rows ◀── THE PRODUCT
-                              meo_exposure_edges     28.9e6 rows ◀── derived
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/v1_dataflow_dark.svg">
+  <img src="docs/assets/v1_dataflow_light.svg" alt="v1's dataflow. Three precomputed static inputs on the left — the road graph and its 365,133 sample points, 525,600 minute-resolution solar positions from pvlib, and 1,280,954 tree canopies joined in 2D — all feed one Unity loop that sweeps time and raycasts. It writes 1,577,374,560 sample rows in 6 h 00 min on one thread at 73,027 rows per second, plus a derived per-edge table of 28,944,000 rows." width="850">
+</picture>
+</div>
 
 Four decisions in v1 that v2 inherits rather than replaces:
 

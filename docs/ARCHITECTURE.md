@@ -79,7 +79,7 @@ Where the two rates come from, and the gap between them:
 One instance sustains `2,400,000 / 295,758 = 8.11` workers' output, so at two `COPY`
 streams per worker it feeds **six**. That single ratio is where `W = 6S` comes from, and
 with it the entire deployment shape — see
-[PERFORMANCE.md §2](PERFORMANCE.md#2-step-1--the-measurement-ladder).
+[PERFORMANCE.md §2](PERFORMANCE.md#2-step-1--measuring-the-pieces).
 
 ---
 
@@ -281,7 +281,7 @@ AND t.shard_index = ANY (SELECT meo_admissible_shards(run_id))
 ```
 
 At the deployed shape it is exact — 9 shards × 6 = 54 slots for 54 workers, because the
-fleet size was derived as 6 × the shard count ([PERFORMANCE.md §2](PERFORMANCE.md#2-step-1--the-measurement-ladder)).
+fleet size was derived as 6 × the shard count ([PERFORMANCE.md §2](PERFORMANCE.md#2-step-1--measuring-the-pieces)).
 So it never binds at full health. Under
 skew it is what keeps the cluster's aggregate ingest flat rather than concentrated.
 
@@ -383,7 +383,7 @@ sockets.
 **Spin-up is counted, not waved away.** It is 7% of wall clock, and together with the
 30 s `ANALYZE` it forms a **75-second floor that no amount of hardware beats** — which is
 why the sizing problem is spending the other 825 s of the budget well
-([PERFORMANCE.md §3](PERFORMANCE.md#3-step-2--the-composed-model-and-the-floor)).
+([PERFORMANCE.md §3](PERFORMANCE.md#3-step-2--assembling-the-pieces-into-one-formula)).
 Pretending otherwise would make the model wrong in the one direction that flatters it.
 
 **Reduce cannot overlap** — it needs the last row — but it is only 2 min because a

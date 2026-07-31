@@ -42,39 +42,17 @@ that would otherwise have to be written from scratch.
 
 ## 2. The six phases
 
-```
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │ 0.  city mesh  (OSM buildings + terrain, ~1 GB Unity project)        │
-  └──────────────────────────────────────────────────────────────────────┘
-                │  RoadGraphExtractor.cs        (Editor, once)
-                ▼
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │ 1.  road_graph.json — 4,168 vertices + 6,700 edges                   │
-  └──────────────────────────────────────────────────────────────────────┘
-                │  db_pipeline_initializer.py   (once)
-                ▼
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │ 2.  meo_waypoints · meo_edges · meo_trees      in PostGIS            │
-  └──────────────────────────────────────────────────────────────────────┘
-                │  ShadowAwarePathFinder — "Export Sample Points"
-                ▼
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │ 3.  meo_sample_points — 365,133 points at 2 m spacing                │
-  └──────────────────────────────────────────────────────────────────────┘
-                │  generate_solar_positions.py  (pvlib, once per year)
-                │  process_tree_data.py         (static canopy shade)
-                ▼
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │ 4.  sun_pos_2026.bin — 525,600 minute-resolution positions           │
-  │     meo_sample_points.tree_value · meo_edges.total_tree_value        │
-  └──────────────────────────────────────────────────────────────────────┘
-                │  ShadowAwarePathFinder — "Export Exposure"   ◀── 6 hours
-                ▼
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │ 5.  meo_exposure_samples — 1.577e9 rows  ◀── THE PRODUCT             │
-  │     meo_exposure_edges   —  28.9e6 rows  ◀── derived convenience     │
-  └──────────────────────────────────────────────────────────────────────┘
-```
+Six artifacts, five phases. Four of the phases run once and take minutes; the fifth is
+the simulation, and it is the six hours.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/v1_phases_dark.svg">
+  <img src="assets/v1_phases_light.svg" alt="v1's six phases as a ladder. Stage 0, the city mesh, becomes stage 1, road_graph.json with 4,168 vertices and 6,700 edges, via RoadGraphExtractor.cs in the Unity Editor. db_pipeline_initializer.py loads that into PostGIS as meo_waypoints, meo_edges and meo_trees. ShadowAwarePathFinder exports 365,133 sample points at 2 metre spacing. generate_solar_positions.py and process_tree_data.py precompute 525,600 minute solar positions and the static tree shade. Only the last phase, Export Exposure, is the run: 6 h 00 min and 990,240,696 raycasts producing 1,577,374,560 sample rows plus 28,944,000 derived per-edge rows. Everything above it is one-time setup." width="850">
+</picture>
+</div>
+
+Each numbered phase is taken in turn below.
 
 ---
 
