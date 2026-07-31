@@ -387,7 +387,7 @@ partition problem, solved by binary search on the bound plus a greedy feasibilit
 | `colliderInstanceID` instead of `.collider` | 4.95e9 fewer managed-object lookups |
 
 **Writing is free.** A finished window goes to a writer thread on a second connection
-while the main thread claims the next task. In sequence the fleet would spend 42% of its
+while the main thread claims the next task. In sequence the fleet would spend 43% of its
 life on sockets.
 
 **Nothing allocates in the hot path**, and the claim is checkable rather than
@@ -403,13 +403,12 @@ Full catalogue, including what was considered and rejected:
 PostgreSQL skips WAL entirely for a `COPY` into a relation created in the **same
 transaction**. So the partition shape was chosen to make that available:
 
-```
-meo_exposure_samples_p
-  PARTITION BY LIST (section_id)              which square kilometre
-    └─ meo_exp_s<section>
-         PARTITION BY RANGE (datetime)        which date and 3 h window
-              └─ meo_exp_s<section>_<date>_w<n>          ONE TASK
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/partition_tree_dark.svg">
+  <img src="docs/assets/partition_tree_light.svg" alt="The two-level partition tree drawn as nested boxes. meo_exposure_samples_p is partitioned by LIST(section_id); each section such as meo_exp_s384 is partitioned by RANGE(datetime) into six 3-hour windows per date; each leaf, such as meo_exp_s384_20260101_w0, holds about 261,000 rows in 17 MB and is written by exactly one task. 84 sections times 60 dates times 6 windows gives 30,240 leaves and 30,240 tasks. Four consequences: no lock contention, zero WAL, COPY FREEZE is legal, and a retry needs no DELETE." width="880">
+</picture>
+</div>
 
 ```sql
 BEGIN;

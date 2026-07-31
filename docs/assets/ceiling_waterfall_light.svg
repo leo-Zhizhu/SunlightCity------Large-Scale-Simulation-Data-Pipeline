@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="470" viewBox="0 0 880 470" role="img" aria-label="Where the theoretical ceiling goes. 54 workers times 3.0 batching times 1.35 locality is a 218.7x ceiling; fleet spin-up costs 18.3x and the reduce phase 38.9x, leaving 161.5x achieved, or 74% of the ceiling.">
+<rect width="880" height="470" fill="#fcfcfb"/>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">Where the theoretical ceiling goes</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Both losses are phases that do not parallelise with the fleet — and naming them is more useful than quoting an efficiency.</text>
+<text x="840.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MODELLED</text>
+<line x1="96.0" y1="308.0" x2="670.0" y2="308.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/>
+<text x="86.0" y="312.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">0×</text>
+<line x1="96.0" y1="264.0" x2="670.0" y2="264.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/>
+<text x="86.0" y="268.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">50×</text>
+<line x1="96.0" y1="219.9" x2="670.0" y2="219.9" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/>
+<text x="86.0" y="223.9" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">100×</text>
+<line x1="96.0" y1="175.9" x2="670.0" y2="175.9" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/>
+<text x="86.0" y="179.9" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">150×</text>
+<line x1="96.0" y1="131.9" x2="670.0" y2="131.9" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/>
+<text x="86.0" y="135.9" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">200×</text>
+<rect x="139.1" y="115.4" width="89.7" height="192.6" rx="4" fill="#256abf" opacity="1.0"/>
+<text x="183.9" y="93.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">218.7×</text>
+<text x="183.9" y="107.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.3" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">54 pods × 3.0 × 1.35</text>
+<text x="183.9" y="326.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric:tabular-nums">raw ceiling</text>
+<rect x="282.6" y="115.4" width="89.7" height="16.1" rx="4" fill="#d03b3b" opacity="0.85"/>
+<text x="327.4" y="93.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">200.4×</text>
+<text x="327.4" y="107.4" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.3" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">-18.3x  (45 s, fixed)</text>
+<text x="327.4" y="326.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric:tabular-nums">fleet spin-up</text>
+<line x1="228.7" y1="115.4" x2="282.6" y2="115.4" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt" stroke-dasharray="3 2"/>
+<rect x="426.0" y="131.5" width="89.7" height="34.3" rx="4" fill="#d03b3b" opacity="0.85"/>
+<text x="470.9" y="109.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">161.5×</text>
+<text x="470.9" y="123.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.3" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">-38.9x  (2m 10s, scales with shards)</text>
+<text x="470.9" y="326.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric:tabular-nums">reduce phase</text>
+<line x1="372.2" y1="131.5" x2="426.0" y2="131.5" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt" stroke-dasharray="3 2"/>
+<rect x="569.5" y="165.8" width="89.7" height="142.2" rx="4" fill="#0ca30c" opacity="1.0"/>
+<text x="614.4" y="143.8" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">161.5×</text>
+<text x="614.4" y="157.8" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.3" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">end to end, work-normalised</text>
+<text x="614.4" y="326.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric:tabular-nums">achieved</text>
+<rect x="700.0" y="100.0" width="154.0" height="116.0" rx="6" fill="#f4f4f1"/>
+<text x="714.0" y="124.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="26" font-weight="700" fill="#256abf" text-anchor="start" style="font-variant-numeric:tabular-nums">74%</text>
+<text x="714.0" y="144.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">of the ceiling</text>
+<text x="714.0" y="166.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.6" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">The missing 26% is not waste.</text>
+<text x="714.0" y="177.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.6" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">It is two phases that cannot</text>
+<text x="714.0" y="188.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.6" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">be parallelised away by</text>
+<text x="714.0" y="199.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.6" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">adding workers.</text>
+<rect x="40.0" y="379.0" width="800.0" height="73.0" rx="6" fill="#f4f4f1"/>
+<text x="56.0" y="404.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">The ceiling is what the fleet would reach if the run were nothing but ray casting. Spin-up (45 s) does not shrink with anything at all;</text>
+<text x="56.0" y="419.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the reduce phase (2m 10s) shrinks with shard count but cannot start until the last row lands, so it adds rather than overlaps. Together</text>
+<text x="56.0" y="434.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">they are the 75-second floor that no hardware budget beats.</text>
+</svg>

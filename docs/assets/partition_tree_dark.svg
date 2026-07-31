@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="540" viewBox="0 0 880 540" role="img" aria-label="The two-level partition tree. meo_exposure_samples_p is partitioned by LIST(section_id), each section by RANGE(datetime) into 6 windows per date, so one leaf is exactly one task: 30,240 tasks and 30,240 leaves of ~261k rows each.">
+<rect width="880" height="540" fill="#1a1a19"/>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">One task, one table — and that is what buys everything else</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">The two partition keys are exactly the two coordinates of a unit of work, so the correspondence is one-to-one.</text>
+<rect x="44.0" y="96.0" width="792.0" height="236.0" rx="7" fill="#1c5cab" opacity="0.16"/>
+<rect x="44.0" y="96.0" width="792.0" height="236.0" rx="7" fill="none" stroke="#1c5cab" stroke-width="1.4"/>
+<text x="58.0" y="117.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exposure_samples_p</text>
+<text x="232.4" y="117.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the logical table every consumer queries</text>
+<text x="58.0" y="134.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9.5" font-weight="600" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">PARTITION BY LIST (section_id)</text>
+<text x="249.0" y="134.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">&lt;- which square kilometre</text>
+<rect x="70.0" y="154.0" width="740.0" height="164.0" rx="7" fill="#5598e7" opacity="0.16"/>
+<rect x="70.0" y="154.0" width="740.0" height="164.0" rx="7" fill="none" stroke="#5598e7" stroke-width="1.4"/>
+<text x="84.0" y="175.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exp_s384</text>
+<text x="186.4" y="175.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">one of 84 sections · this one at grid (384)</text>
+<text x="84.0" y="192.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9.5" font-weight="600" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">PARTITION BY RANGE (datetime)</text>
+<text x="269.1" y="192.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">&lt;- which date, and which 3 h window</text>
+<rect x="96.0" y="208.0" width="168.0" height="46.0" rx="5" fill="#1a1a19" stroke="#f0803c" stroke-width="1.4"/>
+<text x="106.0" y="226.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.6" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exp_s384_20260101_w0</text>
+<text x="106.0" y="241.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.3" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">03:00–06:00  ·  ~261k rows  ·  ~17 MB</text>
+<rect x="276.0" y="208.0" width="168.0" height="46.0" rx="5" fill="#1a1a19" stroke="#f0803c" stroke-width="1.4"/>
+<text x="286.0" y="226.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.6" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exp_s384_20260101_w1</text>
+<text x="286.0" y="241.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.3" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">06:00–09:00  ·  ~261k rows  ·  ~17 MB</text>
+<rect x="456.0" y="208.0" width="168.0" height="46.0" rx="5" fill="#1a1a19" stroke="#f0803c" stroke-width="1.4"/>
+<text x="466.0" y="226.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.6" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exp_s384_20260101_w2</text>
+<text x="466.0" y="241.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.3" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">09:00–12:00  ·  ~261k rows  ·  ~17 MB</text>
+<text x="642.0" y="235.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">· · ·</text>
+<text x="96.0" y="274.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">84 sections × 60 dates × 6 windows = 30,240 leaves, and 30,240 tasks. Each leaf is written by exactly one task, once.</text>
+<text x="44.0" y="356.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="700" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">WHAT THE ONE-TO-ONE CORRESPONDENCE BUYS</text>
+<rect x="44.0" y="368.0" width="189.0" height="62.0" rx="5" fill="#242422"/>
+<text x="55.0" y="386.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#5598e7" text-anchor="start" style="font-variant-numeric:tabular-nums">no lock contention</text>
+<text x="55.0" y="402.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">twelve tasks append to twelve</text>
+<text x="55.0" y="413.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">different files, never the same one</text>
+<rect x="245.0" y="368.0" width="189.0" height="62.0" rx="5" fill="#242422"/>
+<text x="256.0" y="386.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#5598e7" text-anchor="start" style="font-variant-numeric:tabular-nums">zero WAL</text>
+<text x="256.0" y="402.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">COPY into a relation created in the</text>
+<text x="256.0" y="413.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">same transaction is not logged</text>
+<rect x="446.0" y="368.0" width="189.0" height="62.0" rx="5" fill="#242422"/>
+<text x="457.0" y="386.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#5598e7" text-anchor="start" style="font-variant-numeric:tabular-nums">COPY … FREEZE is legal</text>
+<text x="457.0" y="402.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">rows arrive pre-frozen, so no</text>
+<text x="457.0" y="413.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">vacuum has to revisit them</text>
+<rect x="647.0" y="368.0" width="189.0" height="62.0" rx="5" fill="#242422"/>
+<text x="658.0" y="386.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#5598e7" text-anchor="start" style="font-variant-numeric:tabular-nums">retry needs no DELETE</text>
+<text x="658.0" y="402.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">drop the leaf and rebuild it;</text>
+<text x="658.0" y="413.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.4" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">nothing else ever touched it</text>
+<rect x="40.0" y="449.0" width="800.0" height="73.0" rx="6" fill="#242422"/>
+<text x="56.0" y="474.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">A single flat table keyed on datetime would have needed 30,240 range bounds in one list and would have serialised every writer on one</text>
+<text x="56.0" y="489.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">file. The two-level shape is what makes the leaf both the unit of work and the unit of storage — and partition pruning down to one leaf of</text>
+<text x="56.0" y="504.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">~261k rows is also why the sample table carries no index at all.</text>
+</svg>

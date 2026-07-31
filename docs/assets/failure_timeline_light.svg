@@ -45,7 +45,7 @@
 <line x1="297.7" y1="130.0" x2="297.7" y2="146.0" stroke="#fcfcfb" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
 <line x1="327.3" y1="130.0" x2="327.3" y2="146.0" stroke="#fcfcfb" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
 <line x1="356.8" y1="130.0" x2="356.8" y2="146.0" stroke="#fcfcfb" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
-<text x="150.0" y="118.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">│ = heartbeat (30 s)</text>
+<text x="150.0" y="118.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">| = heartbeat (30 s)</text>
 <line x1="386.4" y1="114.0" x2="386.4" y2="156.0" stroke="#d03b3b" stroke-width="2" stroke-linecap="butt"/>
 <text x="394.4" y="124.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#d03b3b" text-anchor="start" style="font-variant-numeric:tabular-nums">SIGKILL</text>
 <text x="394.4" y="138.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">spot reclaim / OOM / node loss</text>

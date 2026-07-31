@@ -79,7 +79,7 @@ namespace SunlightCity.Distributed
     /// Raycasting a window takes ~0.88 s. One task's 261k rows take ~1.30 s down a
     /// SINGLE COPY stream, which is what a WROTE log line reports — but two streams
     /// alternate, so the amortised write cost is ~0.65 s per task. Done in sequence
-    /// that is ~1.53 s per task and the fleet spends 42% of its life waiting on
+    /// that is ~1.53 s per task and the fleet spends 43% of its life waiting on
     /// sockets. So the flush is handed to a writer thread on a SECOND
     /// connection while the main thread claims the next task and starts raycasting
     /// — which is exactly why the capacity model gives each worker two COPY streams
