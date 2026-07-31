@@ -60,7 +60,7 @@ Sanity-check the sizing for your hardware before spending three hours on an imag
 
 ```bash
 python distributed/orchestrator/model.py
-python distributed/orchestrator/model.py --balance --workers 50    # -> 7
+python distributed/orchestrator/model.py --balance --workers 54    # -> 7
 ```
 
 ---
@@ -304,17 +304,17 @@ export SUNLIT_COORD_HOST=localhost SUNLIT_COORD_PORT=5432 \
 cd distributed/orchestrator
 python apply_schema.py --phase load --dry-run     # see the plan first
 python apply_schema.py --phase load
-python plan_tasks.py --run-id run-2026-annual --shards 10 --workers 50 --provision
+python plan_tasks.py --run-id run-2026-annual --shards 9 --workers 54 --provision
 ```
 
 **Read the planner's output.** Two numbers decide whether the run will go well:
 
 ```
-  write imbalance   : 1.072x max/mean
-  read contiguity   : 0.70  (a hash of section ids would give ~0.10)
+  write imbalance   : 1.052x max/mean
+  read contiguity   : 0.66  (a hash of section ids would give ~0.11)
 
    shard  sections    edges     samples   share  vs mean
-       0        11       82      41,203   11.3%   1.014x
+       0         9      744      40,570   11.1%   1.001x
        ...
   tasks             : 30,240  (84 sections x 60 dates x 6 windows)
   cost spread       : 780.0x cheapest to dearest window
@@ -365,11 +365,17 @@ kubectl -n sunlightcity logs -f job/sunlit-smoke
 4. `run 'smoke' verified compatible (shard_count=2, grid and simulation constants match)`
 5. `[Router] routing loaded: N sections across 2 online shard(s)`
 6. `[Geometry] loaded section 384: 4,347 samples across 12 edges in … ms`
-7. `[Worker] COMPUTED task#… in 1.8s | 260,820 rays (145k/s) | 0/60 steps below horizon`
+7. `[Worker] COMPUTED task#… in 0.88s | 260,820 rays (296k/s) | 0/60 steps below horizon`
 8. `[Worker] WROTE task#… : 260,820 rows in 1.31s (199k rows/s)`
 
-Line 7's rate is the one to check against the model's 295k/s per worker. Line 8's is the
-per-stream COPY rate against the model's 200k rows/s.
+Line 7's rate is the one to check against the model's 296k rows/s per worker (B1 × B2 × B3).
+Line 8's is the **per-stream** COPY rate, against B4's 200k rows/s.
+
+> **Line 8 being slower than line 7 is correct, not a stall.** One task's payload goes down
+> one stream and takes ~1.30 s, but each worker alternates between two streams, so the
+> amortised write cost is ~0.65 s per task — comfortably inside the 0.88 s the main thread
+> spends raycasting the next one. If line 8's rate drops below ~150k rows/s the writer
+> stops keeping up and the map phase becomes I/O-bound; that is the number to watch.
 
 **Then confirm the data is sane:**
 
@@ -413,16 +419,16 @@ python monitor.py --run-id run-2026-annual --watch
 ├──────────────────────────────────────────────────────────────────────────┤
 │ ████████████████████████████▎                  63.10%                    │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  done  3,816   running   50   pending  2,182   failed    0               │
-│  workers  50   sections   84   shards  10   rows     995,249,160         │
+│  done 19,081   running   54   pending 11,105   failed    0               │
+│  workers  54   sections   84   shards   9   rows   4,976,501,980         │
 │  affinity hit  92.4%                                                     │
-│  raycasts    995.2M   rate    14.6M/s   vs 1 node  200.4x                │
-│  elapsed        0:01:08   ETA      0:00:40   finish ~14:22               │
+│  raycasts     3.12B   rate    10.0M/s   vs 1 node  218.7x                │
+│  elapsed        0:05:11   ETA      0:03:02   finish ~14:25               │
 ╰──────────────────────────────────────────────────────────────────────────╯
 
-  shard load vs cap 6:  [██████████]  50/60 slots in use
+  shard load vs cap 6:  [██████████]  54/54 slots in use
    shard     state  run /cap   done  pending failed          rows
-       0    online    5   /6    381      224      0    99,368,610
+       0    online    6   /6  2,120    1,233      0   552,944,664
        ...
 ```
 
@@ -431,7 +437,7 @@ python monitor.py --run-id run-2026-annual --watch
 | symptom | meaning | action |
 |---|---|---|
 | some shards at cap, others at 0 | the topology is unbalanced, or retries have clustered. The makespan is being set by the busy ones. | re-plan with smaller `--section-meters` |
-| **every** shard at cap | **healthy** — the steady state for a fleet larger than shards × cap | none |
+| **every** shard at cap | **healthy** — and the steady state here by construction, since the fleet was sized at exactly shards × cap (9 × 6 = 54) | none |
 | affinity below ~85% | dispatch is thrashing the working sets; the map phase will run long | check for widespread task failures forcing re-dispatch |
 | `hb` climbing past 300 s | a worker is a third of the way to being reaped | check that pod's logs and node |
 | `failed` > 0 | retries exhausted | read `last_error`; see [§11](#11-troubleshooting) |
@@ -465,12 +471,17 @@ Exit codes: `0` finalised · `1` operational · `2` incomplete · `3` integrity 
 The report ends with the numbers to compare against [PERFORMANCE.md](PERFORMANCE.md):
 
 ```
-  map wall clock  : 0:01:47
-  reduce          : 0:02:10  (9 shards in parallel)
-  total           : 0:02:35
-  throughput      : 14.7M raycasts/s
-  per worker      : 294K/s  (v1 single-thread baseline 73K/s)
-  vs v1 end-to-end: 161.5x  (model predicts 161.5x)
+  map wall clock  : 0:08:13  (14:17:00 -> 14:25:13)
+  reduce          : 0:02:09  (9 shards in parallel)
+  observed        : 0:10:23  (first claim -> finalised; excludes spin-up)
+  + spin-up       : 0:00:45  (modelled; the queue cannot see it)
+  end-to-end      : 0:11:08  (model predicts 11m 08.7s)
+  vs the deadline : 15 min target, +25.7% margin
+  distinct workers: 54
+  throughput      : 16M rows/s (57B/hour)
+  per worker      : 296K rows/s  (v1 single-thread baseline 73K/s, model 296K/s)
+  raycast rate    : 10M/s  (62.8% of rows touched the BVH)
+  vs v1           : 161.5x work-normalised  (v1 would need 30.00 h for these 7,886,872,800 rows; model predicts 161.5x)
 ```
 
 > ✅ **Check:**

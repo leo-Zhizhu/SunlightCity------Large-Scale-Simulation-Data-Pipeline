@@ -233,9 +233,12 @@ def render(cur, run_id: str, st: dict, clear: bool) -> None:
         elapsed = (now.astimezone() - st["started_at"]).total_seconds()
         if elapsed > 0 and rays:
             rate = rays / elapsed
-            # v1 reference: 7.887e9 raycasts in 6.0 h on one desktop main thread.
+            # Compared against V1_BVH_RATE, not V1_RAYCAST_RATE: the numerator here is
+            # a RAYCAST count, and V1_RAYCAST_RATE is v1's ROW rate (the names are a
+            # trap -- see model.py). v1 fired 990,240,696 raycasts in 6.0 h on one
+            # desktop main thread, so ~45.8k/s.
             row(f"  raycasts {human(rays):>10}   rate {human(rate):>8}/s"
-                f"   vs 1 node {rate / model.V1_RAYCAST_RATE:>6.1f}x")
+                f"   vs 1 node {rate / model.V1_BVH_RATE:>6.1f}x")
 
             planned = st["rays_planned"]
             if planned > rays:

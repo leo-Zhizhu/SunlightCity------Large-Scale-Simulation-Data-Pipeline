@@ -159,8 +159,8 @@ $$ LANGUAGE sql STABLE;
 --     the MAX. On a whole-network snapshot that is the difference between ~200 ms
 --     and ~2 s, and it is one option.
 --
---   fetch_size '50000' — the default 100 means a 14.5M-row scan makes ~145,000
---     round trips. At even 0.2 ms each that is 29 s of pure latency.
+--   fetch_size '50000' — the default 100 means a 16.1M-row scan makes ~161,000
+--     round trips. At even 0.2 ms each that is 32 s of pure latency.
 --
 --   extensions 'postgis' — lets the planner push PostGIS operators down to the
 --     shard instead of fetching rows and filtering locally.

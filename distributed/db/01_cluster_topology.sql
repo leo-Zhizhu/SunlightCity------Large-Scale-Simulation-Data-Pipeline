@@ -18,7 +18,7 @@
 -- One instance cannot absorb 7.89 billion rows from 54 concurrent producers in
 -- any reasonable time. A COPY backend is one busy CPU, so a 16 vCPU instance
 -- sustains about twelve productive streams — roughly 2.4M rows/s — while the
--- fleet produces 14.8M rows/s. Six sevenths of the fleet would sit waiting.
+-- fleet produces 15.97M rows/s. Six sevenths of the fleet would sit waiting.
 --
 -- The fix is more instances, and the whole question becomes: which instance owns
 -- which piece of the city, and how does a worker know?

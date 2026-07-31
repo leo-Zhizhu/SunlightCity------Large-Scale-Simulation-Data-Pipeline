@@ -541,13 +541,23 @@ sized so that being wrong by 15% on every one of them at once still meets the de
 every run, so the first thing a real deployment does is replace these with its own:
 
 ```
-  map wall clock  : 0:08:14
-  reduce          : 0:02:10  (9 shards in parallel)
-  total           : 0:11:09
-  throughput      : 16.0M rows/s (57B/hour)
-  per worker      : 296K/s  (v1 single-thread baseline 73K/s)
-  vs v1 end-to-end: 161.5x  (model predicts 161.5x)
+  map wall clock  : 0:08:13  (14:17:00 -> 14:25:13)
+  reduce          : 0:02:09  (9 shards in parallel)
+  observed        : 0:10:23  (first claim -> finalised; excludes spin-up)
+  + spin-up       : 0:00:45  (modelled; the queue cannot see it)
+  end-to-end      : 0:11:08  (model predicts 11m 08.7s)
+  vs the deadline : 15 min target, +25.7% margin
+  distinct workers: 54
+  throughput      : 16M rows/s (57B/hour)
+  per worker      : 296K rows/s  (v1 single-thread baseline 73K/s, model 296K/s)
+  raycast rate    : 10M/s  (62.8% of rows touched the BVH)
+  vs v1           : 161.5x work-normalised  (v1 would need 30.00 h for these 7,886,872,800 rows; model predicts 161.5x)
 ```
+
+Note what that report separates, because all three are easy to conflate: the queue's wall
+clock **excludes** spin-up (it cannot see a pod that has not claimed anything yet), rows
+and raycasts differ by 37.2%, and the speedup is **work-normalised** against what v1 would
+have needed for *these* rows rather than against its own 12-date run.
 
 ---
 

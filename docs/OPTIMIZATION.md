@@ -97,8 +97,11 @@ memory": correct, it does not. It buys **locality**, not footprint.
 
 ## 3. The flush overlaps the next task's raycasting
 
-Raycasting a window takes ~1.8 s; writing its 261k rows takes ~1.3 s. In sequence that
-is 3.1 s per task and the fleet spends **42% of its life on sockets**.
+Raycasting a window takes ~0.88 s. Writing its 261k rows takes ~1.30 s down a *single*
+`COPY` stream — but each worker alternates between **two**, so the amortised write cost is
+**~0.65 s** per task. (Both numbers are real and neither is a typo: 1.30 s is the latency a
+`WROTE` log line reports, 0.65 s is the throughput the capacity model uses.) In sequence
+that is ~1.53 s per task and the fleet spends **42% of its life on sockets**.
 
 So a finished window is handed to a writer thread on a **second connection**, and the
 main thread immediately claims the next task:

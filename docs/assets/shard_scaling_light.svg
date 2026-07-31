@@ -80,6 +80,6 @@
 <text x="724.0" y="164.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">the other 4.1x</text>
 <text x="724.0" y="176.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">is per-worker</text>
 <rect x="40.0" y="326.0" width="780.0" height="56.0" rx="6" fill="#f4f4f1"/>
-<text x="56.0" y="346.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">One instance absorbs ~2.4M rows/s (12 COPY streams on 16 vCPU, one busy CPU each). The fleet produces 16.0M/s.</text>
+<text x="56.0" y="346.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">One instance absorbs ~2.4M rows/s (12 COPY streams on 16 vCPU, one busy CPU each). The fleet produces 16.0M rows/s.</text>
 <text x="56.0" y="364.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">So the cluster needs at least 7 to keep up at all. 9 are deployed — +35% headroom, so a checkpoint, a vacuum, or losing an instance outright cannot stall the fleet.</text>
 </svg>

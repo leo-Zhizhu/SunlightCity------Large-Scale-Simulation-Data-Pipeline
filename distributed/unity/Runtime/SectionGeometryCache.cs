@@ -61,7 +61,7 @@ namespace SunlightCity.Distributed
     /// The SHARD, not the coordinator. Every shard holds the full static geometry
     /// (~140 MB replicated, cheaper than any scheme for fetching it on demand), so
     /// the per-task path never touches the coordinator except to claim, heartbeat
-    /// and complete. That is what keeps one small instance able to serve 50
+    /// and complete. That is what keeps one small instance able to serve 54
     /// workers.
     /// </summary>
     public sealed class SectionGeometryCache

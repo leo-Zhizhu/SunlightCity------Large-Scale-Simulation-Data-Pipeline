@@ -292,23 +292,54 @@ def report_throughput(cur, run_id: str, stats: dict, reduce_seconds: float) -> N
         return
 
     rays = stats.get("rays", 0) or 0
-    total = float(wall) + reduce_seconds
+    rows = stats.get("rows", 0) or 0
+
+    # THREE distinctions this report used to get wrong, all of which the docs make a
+    # point of, so a report contradicting them is worse than no report:
+    #
+    #   1. `wall` is measured from the FIRST task claim to the LAST task finish, so it
+    #      does NOT include fleet spin-up. The modelled end-to-end figure does. Adding
+    #      the modelled spin-up is what makes the two comparable.
+    #   2. ROWS are not RAYCASTS (they differ by ~37%: the horizon guard resolves the
+    #      rest without touching the BVH). Quoting a raycast rate against v1's ROW rate
+    #      compared two different quantities.
+    #   3. The speedup must be WORK-NORMALISED. v1's 6 h covered 12 dates; this run
+    #      covers 60. Dividing by V1_SECONDS compared different amounts of work and
+    #      understated the result by 5x.
+    observed = float(wall) + reduce_seconds
+    end_to_end = observed + model.FLEET_STARTUP_SECONDS
 
     print(f"  map wall clock  : {timedelta(seconds=int(wall))}  "
           f"({t0:%H:%M:%S} -> {t1:%H:%M:%S})")
     print(f"  reduce          : {timedelta(seconds=int(reduce_seconds))}  "
           f"({stats['shard_count']} shards in parallel)")
-    print(f"  total           : {timedelta(seconds=int(total))}")
+    print(f"  observed        : {timedelta(seconds=int(observed))}  "
+          f"(first claim -> finalised; excludes spin-up)")
+    print(f"  + spin-up       : {timedelta(seconds=int(model.FLEET_STARTUP_SECONDS))}  "
+          f"(modelled; the queue cannot see it)")
+    print(f"  end-to-end      : {timedelta(seconds=int(end_to_end))}  "
+          f"(model predicts {model.fmt(model.total_seconds())})")
+    print(f"  vs the deadline : {model.TARGET_SECONDS / 60:.0f} min target, "
+          f"{100 * (1 - end_to_end / model.TARGET_SECONDS):+.1f}% margin"
+          f"{'' if end_to_end <= model.TARGET_SECONDS else '   *** OVER ***'}")
     print(f"  distinct workers: {workers}")
 
+    if rows:
+        row_rate = rows / float(wall)
+        print(f"  throughput      : {human(row_rate)} rows/s "
+              f"({human(row_rate * 3600)}/hour)")
+        print(f"  per worker      : {human(row_rate / max(1, workers))} rows/s  "
+              f"(v1 single-thread baseline {human(model.V1_ROW_RATE)}/s, "
+              f"model {human(model.WORKER_ROW_RATE)}/s)")
     if rays:
-        rate = rays / float(wall)
-        print(f"  throughput      : {human(rate)} raycasts/s "
-              f"({human(rate * 3600)}/hour)")
-        print(f"  per worker      : {human(rate / max(1, workers))}/s  "
-              f"(v1 single-thread baseline {human(model.V1_RAYCAST_RATE)}/s)")
-        print(f"  vs v1 end-to-end: {model.V1_SECONDS / total:.1f}x  "
-              f"(model predicts {model.V1_SECONDS / model.total_seconds():.1f}x)")
+        print(f"  raycast rate    : {human(rays / float(wall))}/s  "
+              f"({100 * rays / max(1, rows):.1f}% of rows touched the BVH)")
+    # Work-normalised: what v1 would have needed for THIS run's rows, at its measured
+    # sustained rate. See model.v1_equivalent_seconds().
+    equiv = model.v1_equivalent_seconds(rows or model.EXPOSURE_ROWS)
+    print(f"  vs v1           : {equiv / end_to_end:.1f}x work-normalised  "
+          f"(v1 would need {model.fmt(equiv)} for these {rows:,} rows; "
+          f"model predicts {model.speedup():.1f}x)")
 
 
 # ---------------------------------------------------------------------------

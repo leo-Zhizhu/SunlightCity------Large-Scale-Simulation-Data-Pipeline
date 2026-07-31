@@ -48,7 +48,7 @@ data:
 
   # ---- Lease / heartbeat ---------------------------------------------------
   # The lease must exceed the worst-case single-task duration or a healthy worker
-  # loses its lease mid-task and the work is done twice. A section-window is ~1.8 s
+  # loses its lease mid-task and the work is done twice. A section-window is ~0.9 s
   # of raycasting plus a flush; 900 s is enormous headroom, and headroom is free here
   # because the reaper only acts on tasks that have genuinely stopped reporting.
   SUNLIT_LEASE_SECONDS: "900"

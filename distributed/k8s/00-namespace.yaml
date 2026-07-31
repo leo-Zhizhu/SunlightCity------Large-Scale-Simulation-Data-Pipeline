@@ -29,7 +29,7 @@ metadata:
 # That is a lot of RAM, and almost all of it is the shards — deliberately. Each
 # holds ~56 GB of exposure samples, so 128 Gi means a shard's entire slice of the
 # dataset sits in its page cache and the reduce phase's aggregate never touches
-# disk. It is also why the run costs only ~111 vCPU-hours: the hardware is wide, not
+# disk. It is also why the run costs only ~109 vCPU-hours: the hardware is wide, not
 # held for long.
 #
 # The quota is set ~15% above the design so a rolling replacement or one extra
