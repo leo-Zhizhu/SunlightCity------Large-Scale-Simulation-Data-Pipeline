@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="733" viewBox="0 0 860 733" role="img" aria-label="v1's six phases as a ladder: the city mesh becomes a road graph, the graph becomes PostGIS geometry and 365,133 sample points, a year of solar positions and the static tree shade are precomputed, and only the last transition — 6 h 00 min of sweeping and raycasting — produces the 1,577,374,560 sample rows. Every earlier step runs once.">
+<rect width="860" height="733" fill="#fcfcfb"/>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">The six phases, and which one costs six hours</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Boxes are artifacts. Arrows are the phases that produce them, labelled with the tool that runs and what it costs.</text>
+<text x="820.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">V1_PIPELINE.md</text>
+<rect x="56.0" y="84.0" width="4.0" height="451.0" rx="2" fill="#898781"/>
+<text x="0" y="0" transform="translate(48.0,309.5) rotate(-90)" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="700" fill="#898781" text-anchor="middle">ONE-TIME SETUP</text>
+<rect x="56.0" y="541.0" width="4.0" height="90.0" rx="2" fill="#c2410c"/>
+<text x="0" y="0" transform="translate(48.0,586.0) rotate(-90)" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="700" fill="#c2410c" text-anchor="middle">THE RUN</text>
+<rect x="96.0" y="84.0" width="452.0" height="52.0" rx="6" fill="#f4f4f1"/>
+<rect x="96.0" y="84.0" width="3.0" height="52.0" rx="1.5" fill="#256abf"/>
+<circle cx="122.0" cy="104.0" r="11" fill="#256abf"/>
+<text x="122.0" y="108.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">0</text>
+<text x="144.0" y="108.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">city mesh</text>
+<text x="144.0" y="123.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">OSM buildings + terrain · ~1 GB Unity project</text>
+<text x="572.0" y="102.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">No road network in it. The street surface is the</text>
+<text x="572.0" y="113.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">absence of buildings, which is a shape, not a graph.</text>
+<line x1="122.0" y1="148.0" x2="122.0" y2="175.0" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="175.0" x2="118.6" y2="169.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="175.0" x2="125.4" y2="169.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<text x="138.0" y="160.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">phase 1</text>
+<text x="188.0" y="160.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">RoadGraphExtractor.cs</text>
+<text x="548.0" y="160.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">Unity Editor · once</text>
+<rect x="96.0" y="180.0" width="452.0" height="52.0" rx="6" fill="#f4f4f1"/>
+<rect x="96.0" y="180.0" width="3.0" height="52.0" rx="1.5" fill="#256abf"/>
+<circle cx="122.0" cy="200.0" r="11" fill="#256abf"/>
+<text x="122.0" y="204.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">1</text>
+<text x="144.0" y="204.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">road_graph.json</text>
+<text x="144.0" y="219.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">4,168 vertices · 6,700 edges</text>
+<text x="572.0" y="198.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Rasterise, dilate, BFS distance transform, keep the</text>
+<text x="572.0" y="209.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">ridge line. Only degree-1 and degree-2 nodes are ever</text>
+<text x="572.0" y="220.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">removed, so junctions survive by construction.</text>
+<line x1="122.0" y1="244.0" x2="122.0" y2="271.0" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="271.0" x2="118.6" y2="265.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="271.0" x2="125.4" y2="265.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<text x="138.0" y="256.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">phase 2</text>
+<text x="188.0" y="256.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">db_pipeline_initializer.py</text>
+<text x="548.0" y="256.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">once</text>
+<rect x="96.0" y="276.0" width="452.0" height="52.0" rx="6" fill="#f4f4f1"/>
+<rect x="96.0" y="276.0" width="3.0" height="52.0" rx="1.5" fill="#256abf"/>
+<circle cx="122.0" cy="296.0" r="11" fill="#256abf"/>
+<text x="122.0" y="300.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">2</text>
+<text x="144.0" y="300.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_waypoints · meo_edges · meo_trees</text>
+<text x="144.0" y="315.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">in PostGIS · 1,280,954 tree canopies</text>
+<text x="572.0" y="294.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Six tables. This is the schema, and v2 does not change</text>
+<text x="572.0" y="305.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">it.</text>
+<line x1="122.0" y1="340.0" x2="122.0" y2="367.0" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="367.0" x2="118.6" y2="361.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="367.0" x2="125.4" y2="361.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<text x="138.0" y="352.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">phase 3</text>
+<text x="188.0" y="352.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">ShadowAwarePathFinder — "Export Sample Points"</text>
+<text x="548.0" y="352.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">minutes</text>
+<rect x="96.0" y="372.0" width="452.0" height="52.0" rx="6" fill="#f4f4f1"/>
+<rect x="96.0" y="372.0" width="3.0" height="52.0" rx="1.5" fill="#256abf"/>
+<circle cx="122.0" cy="392.0" r="11" fill="#256abf"/>
+<text x="122.0" y="396.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">3</text>
+<text x="144.0" y="396.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_sample_points</text>
+<text x="144.0" y="411.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">365,133 points at 2 m spacing</text>
+<text x="572.0" y="390.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">sequence_index and distance_from_start make an edge an</text>
+<text x="572.0" y="401.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">ordered series with a direction — what</text>
+<text x="572.0" y="412.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_edge_directional_cost() is built on.</text>
+<line x1="122.0" y1="436.0" x2="122.0" y2="463.0" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="463.0" x2="118.6" y2="457.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="122.0" y1="463.0" x2="125.4" y2="457.5" stroke="#c3c2b7" stroke-width="1.4" stroke-linecap="round"/>
+<text x="138.0" y="448.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">phase 4</text>
+<text x="188.0" y="448.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">generate_solar_positions.py · process_tree_data.py</text>
+<text x="548.0" y="448.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">once per year</text>
+<rect x="96.0" y="468.0" width="452.0" height="67.0" rx="6" fill="#f4f4f1"/>
+<rect x="96.0" y="468.0" width="3.0" height="67.0" rx="1.5" fill="#256abf"/>
+<circle cx="122.0" cy="488.0" r="11" fill="#256abf"/>
+<text x="122.0" y="492.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">4</text>
+<text x="144.0" y="492.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">sun_pos_2026.bin</text>
+<text x="144.0" y="507.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">525,600 minute positions, local standard time</text>
+<text x="144.0" y="522.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_sample_points.tree_value · meo_edges.total_tree_value</text>
+<text x="572.0" y="486.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Both are time-invariant, so both are precomputed.</text>
+<text x="572.0" y="497.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Canopy shade becomes a 2D spatial join rather than</text>
+<text x="572.0" y="508.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">geometry in the raycast path.</text>
+<line x1="122.0" y1="547.0" x2="122.0" y2="574.0" stroke="#c2410c" stroke-width="2.4" stroke-linecap="round"/>
+<line x1="122.0" y1="574.0" x2="118.6" y2="568.5" stroke="#c2410c" stroke-width="2.4" stroke-linecap="round"/>
+<line x1="122.0" y1="574.0" x2="125.4" y2="568.5" stroke="#c2410c" stroke-width="2.4" stroke-linecap="round"/>
+<text x="138.0" y="559.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#c2410c" text-anchor="start" style="font-variant-numeric:tabular-nums">phase 5</text>
+<text x="188.0" y="559.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9" font-weight="400" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">ShadowAwarePathFinder — "Export Exposure"</text>
+<text x="548.0" y="559.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="700" fill="#c2410c" text-anchor="end" style="font-variant-numeric:tabular-nums">6 h 00 min — the run</text>
+<rect x="96.0" y="579.0" width="452.0" height="52.0" rx="6" fill="#f4f4f1" stroke="#c2410c" stroke-width="1.5"/>
+<rect x="96.0" y="579.0" width="3.0" height="52.0" rx="1.5" fill="#c2410c"/>
+<circle cx="122.0" cy="599.0" r="11" fill="#c2410c"/>
+<text x="122.0" y="603.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">5</text>
+<text x="144.0" y="603.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exposure_samples — 1,577,374,560 rows</text>
+<text x="144.0" y="618.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exposure_edges — 28,944,000 rows · derived</text>
+<rect x="460.0" y="589.0" width="78.0" height="15.0" rx="7.5" fill="#c2410c"/>
+<text x="499.0" y="600.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">THE PRODUCT</text>
+<text x="572.0" y="597.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">110 GB with two indexes maintained inline. 990,240,696</text>
+<text x="572.0" y="608.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">raycasts at 73,027 rows/s on one thread. Peak RAM ~250</text>
+<text x="572.0" y="619.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">MB, flat.</text>
+<rect x="40.0" y="659.0" width="780.0" height="74.0" rx="6" fill="#f4f4f1"/>
+<text x="56.0" y="679.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">Four of the five phases run once and are measured in minutes. The fifth is the simulation: 990,240,696 raycasts against the city's</text>
+<text x="56.0" y="695.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">BVH, 6 h 00 min on one thread. v2 changes only that last arrow — same inputs, same schema, same rows, on 54 workers and 9 database</text>
+<text x="56.0" y="711.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">instances instead of one desktop.</text>
+</svg>

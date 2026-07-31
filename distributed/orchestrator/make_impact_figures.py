@@ -47,6 +47,15 @@ WHY THE ROWS ARE KEPT — the pair that carries the README's schema argument.
                         different cells — which is why the schema keeps per-sample
                         rows. Recomputed from the self-test fixture (see FIXTURE).
 
+V1 — the pipeline that defined the schema. Both replaced ASCII sketches, so both
+carry something the sketch could not: where the time actually goes.
+
+ 11. v1_dataflow       three precomputed static inputs, one Unity loop, one product.
+                       For the README.
+ 12. v1_phases         the same pipeline as a six-stage ladder, with the tool and the
+                       cost on every arrow and the one-time setup bracketed off from
+                       the run. For V1_PIPELINE.md.
+
 Every figure is emitted in light and dark. Check them RASTERISED after any edit —
 overlapping labels and text running off the canvas are invisible in the SVG source
 and were the only defects found in review both times.
@@ -204,6 +213,15 @@ def fmt_t(seconds: float) -> str:
     if seconds >= 60:
         return f"{int(seconds // 60)}m {seconds % 60:02.0f}s"
     return f"{seconds:.0f} s"
+
+
+def arrow(s: "SVG", x1, y1, x2, y2, colour, sw=1.4, head=5.5, dash=None):
+    """A straight connector with a barbed head at (x2, y2)."""
+    s.line(x1, y1, x2, y2, colour, sw, dash=dash, cap="round")
+    ang = math.atan2(y2 - y1, x2 - x1)
+    for off in (math.radians(148), math.radians(-148)):
+        s.line(x2, y2, x2 + head * math.cos(ang + off), y2 + head * math.sin(ang + off),
+               colour, sw, cap="round")
 
 
 def wrap(text: str, size: float, width: float) -> list[str]:
@@ -875,6 +893,304 @@ def fig_directional_cost(theme: str) -> str:
         s.text(56, CY + 36 + j * 16, ln, 11, t["muted"])
     return s.done()
 
+# ===========================================================================
+# FIGURE 11 — v1 in one pass, for the README
+#
+# Three static inputs, one loop, one product. The point the ASCII sketch this
+# replaced could not make: the geometry, the ephemeris and the canopy shade are all
+# precomputed, so the 6 hours is spent entirely inside the middle box.
+# ===========================================================================
+V1_EDGE_ROWS = model.EDGES * model.STEPS_PER_DAY * model.V1_DAYS      # 28,944,000
+V1_WALL = (f"{int(model.V1_SECONDS // 3600)} h "
+           f"{int(model.V1_SECONDS % 3600 // 60):02d} min")
+MINUTES_PER_YEAR = 365 * 1440                                        # 525,600
+
+
+def fig_v1_dataflow(theme: str) -> str:
+    t = THEMES[theme]
+    W = 860
+    IN_X, IN_W = 40, 226
+    OR_X, OR_W = 322, 244
+    OU_X, OU_W = 622, 198
+    card_h, gap = 92, 12
+    OR_Y, OR_H = 96, 3 * card_h + 2 * gap      # the oracle spans all three inputs
+    FY = OR_Y + OR_H + 20                      # footer panel
+    H = FY + 50 + 18
+
+    s = SVG(W, H, t,
+            f"v1's dataflow: three precomputed static inputs — the road graph and its "
+            f"{model.SAMPLE_POINTS:,} sample points, {MINUTES_PER_YEAR:,} minute-"
+            f"resolution solar positions, and {model.TREES:,} tree canopies joined in 2D "
+            f"— all feed one Unity loop that sweeps time and raycasts, writing "
+            f"{model.V1_ROWS:,} sample rows in {V1_WALL} on one thread, plus a derived "
+            f"per-edge table of {V1_EDGE_ROWS:,} rows.")
+
+    s.text(40, 34, "v1 in one pass: three static inputs, one oracle, one product",
+           16, t["ink"], weight="600")
+    s.text(40, 55, "Everything on the left is computed once. All six hours are spent "
+                   "inside the middle box.", 11.5, t["muted"])
+    s.text(W - 40, 34, f"MEASURED · one desktop, {V1_WALL}", 9.5, t["muted"],
+           anchor="end", weight="600")
+
+    # ---- the three static inputs -------------------------------------------
+    # The tool line is a list: at 8.5 px mono, two script names on one line run off
+    # the card, and the card is as narrow as it is on purpose.
+    inputs = [
+        ("GEOMETRY · once", "road_graph.json → PostGIS",
+         [f"{model.WAYPOINTS:,} waypoints · {model.EDGES:,} edges",
+          f"{model.SAMPLE_POINTS:,} sample points at 2 m"],
+         ["RoadGraphExtractor.cs", "  → db_pipeline_initializer.py"]),
+        ("SUN · once per year", "pvlib ephemeris",
+         [f"{MINUTES_PER_YEAR:,} minute positions",
+          "indexed in local standard time, never local time"],
+         ["generate_solar_positions.py"]),
+        ("TREES · once", f"{model.TREES:,} canopies",
+         ["time-invariant, so a 2D PostGIS spatial join",
+          "— canopy geometry never enters a ray"],
+         ["process_tree_data.py"]),
+    ]
+    for i, (tag, title, details, tools) in enumerate(inputs):
+        y = 96 + i * (card_h + gap)
+        mid = y + card_h / 2
+        s.rect(IN_X, y, IN_W, card_h, t["panel"], rx=6)
+        s.rect(IN_X, y, 3, card_h, t["v2"], rx=1.5)
+        s.text(IN_X + 14, y + 16, tag, 8.5, t["muted"], weight="700")
+        s.text(IN_X + 14, y + 33, title, 11, t["ink"], weight="600")
+        for j, d in enumerate(details):
+            s.text(IN_X + 14, y + 48 + j * 12, d, 9, t["ink2"])
+        for j, tool in enumerate(tools):
+            s.text(IN_X + 14, y + 76 + j * 11, tool, 8.5, t["muted"], family=MONO)
+        arrow(s, IN_X + IN_W + 6, mid, OR_X - 6, mid, t["muted"], 1.4)
+
+    # ---- the oracle --------------------------------------------------------
+    s.rect(OR_X, OR_Y, OR_W, OR_H, t["panel"], rx=6, stroke=t["v2"], sw=1.5)
+    cx = OR_X + 16
+    s.text(cx, OR_Y + 20, "UNITY AS A GEOMETRIC ORACLE", 9, t["v2"], weight="700")
+    for j, ln in enumerate(wrap("Nothing renders. The only thing wanted from it is "
+                                "Physics.Raycast against a BVH over the city's mesh "
+                                "colliders.", 9, OR_W - 32)):
+        s.text(cx, OR_Y + 36 + j * 11, ln, 9, t["ink2"])
+
+    loop = [
+        f"for date in {model.V1_DAYS} dates:",
+        f"  for step in {model.STEPS_PER_DAY} timesteps:",
+        f"    if sun_altitude > {model.SUN_ANGLE_THRESHOLD:.0f}°:",
+        "      raycast every sample point",
+        "    else: shadowed, no ray cast",
+        "    binary COPY the window",
+    ]
+    ly = OR_Y + 76
+    s.rect(cx - 6, ly - 12, OR_W - 20, 11 * len(loop) + 14, t["surface"], rx=4)
+    for j, ln in enumerate(loop):
+        s.text(cx, ly + j * 11, ln, 8.5,
+               t["accent"] if "raycast" in ln else t["ink2"], family=MONO,
+               weight="700" if "raycast" in ln else "400")
+
+    gy = ly + 11 * len(loop) + 22
+    s.text(cx, gy, f"{model.V1_RAYCASTS:,} raycasts", 9.5, t["ink"], weight="600")
+    frac = model.V1_RAYCASTS / model.V1_ROWS
+    bw = OR_W - 32
+    s.rect(cx, gy + 8, bw * frac, 10, t["accent"], rx=2)
+    s.rect(cx + bw * frac, gy + 8, bw * (1 - frac), 10, t["v2_light"], rx=2)
+    for j, ln in enumerate(wrap(
+            f"{100 * frac:.0f}% of timesteps are above the horizon guard; the other "
+            f"{100 * (1 - frac):.0f}% are declared shadowed without a ray.",
+            8.5, OR_W - 32)):
+        s.text(cx, gy + 32 + j * 11, ln, 8.5, t["muted"])
+    # What it cost, anchored to the bottom of the box rather than floated under the
+    # bar — it is the summary, and a rule separates it from what the loop does.
+    sy = OR_Y + OR_H - 52
+    s.line(cx, sy - 14, OR_X + OR_W - 16, sy - 14, t["axis"], 1)
+    s.text(cx, sy + 8, f"{V1_WALL} · one thread", 12, t["ink"], weight="700")
+    s.text(cx, sy + 24, f"{model.V1_ROW_RATE:,.0f} rows/s · ~250 MB RAM, flat", 9,
+           t["ink2"])
+
+    # ---- what comes out ----------------------------------------------------
+    # Both cards size themselves from their wrapped notes; the product's note ran
+    # past the card's rounded corner when the height was fixed.
+    a_note = wrap("Written straight out of the loop by binary COPY. One row per (sample "
+                  f"point, timestep), carrying one bit — {model.V1_MEASURED_GB:.0f} GB "
+                  "with two indexes maintained inline.", 9, OU_W - 28)
+    a_y, a_h = 96, 108 + 11 * len(a_note)
+    s.rect(OU_X, a_y, OU_W, a_h, t["panel"], rx=6, stroke=t["accent"], sw=1.5)
+    s.rect(OU_X + 14, a_y + 12, 74, 15, t["accent"], rx=7.5)
+    s.text(OU_X + 51, a_y + 23, "THE PRODUCT", 8.5, t["on_v2"], anchor="middle",
+           weight="700")
+    s.text(OU_X + 14, a_y + 46, "meo_exposure_samples", 10.5, t["ink"], weight="700",
+           family=MONO)
+    s.text(OU_X + 14, a_y + 68, f"{model.V1_ROWS:,}", 16, t["v2"], weight="700",
+           family=MONO)
+    s.text(OU_X + 14, a_y + 82, "rows", 9, t["muted"])
+    for j, ln in enumerate(a_note):
+        s.text(OU_X + 14, a_y + 100 + j * 11, ln, 9, t["ink2"])
+
+    b_note = wrap("Derived afterwards by a SQL rollup, and regenerable from the samples "
+                  "at any time.", 9, OU_W - 28)
+    b_y, b_h = a_y + a_h + 18, 62 + 11 * len(b_note)
+    s.rect(OU_X, b_y, OU_W, b_h, t["panel"], rx=6)
+    s.text(OU_X + 14, b_y + 22, "meo_exposure_edges", 10.5, t["ink2"], weight="700",
+           family=MONO)
+    s.text(OU_X + 14, b_y + 42, f"{V1_EDGE_ROWS:,}", 13, t["v1"], weight="700",
+           family=MONO)
+    s.text(OU_X + 14, b_y + 54, "rows", 9, t["muted"])
+    for j, ln in enumerate(b_note):
+        s.text(OU_X + 14, b_y + 68 + j * 11, ln, 9, t["muted"])
+
+    # One split connector, so it reads as one loop producing both. The two branches
+    # are labelled inside the cards, not on the elbows — there are 22 px of gap here
+    # and a label put in it landed on top of the product card.
+    jx = OR_X + OR_W + 26
+    s.line(OR_X + OR_W + 6, OR_Y + OR_H / 2, jx, OR_Y + OR_H / 2, t["muted"], 1.4)
+    s.line(jx, a_y + a_h / 2, jx, b_y + b_h / 2, t["muted"], 1.4)
+    arrow(s, jx, a_y + a_h / 2, OU_X - 6, a_y + a_h / 2, t["muted"], 1.4)
+    arrow(s, jx, b_y + b_h / 2, OU_X - 6, b_y + b_h / 2, t["muted"], 1.4)
+
+    # ---- footer ------------------------------------------------------------
+    fy = FY
+    s.rect(40, fy, W - 80, 50, t["panel"], rx=6)
+    s.text(56, fy + 19,
+           f"The ephemeris and the {model.TREES / 1e6:.2f} million canopies are both "
+           f"time-invariant, so both are precomputed and joined — neither is ever "
+           f"raycast.", 11, t["ink2"])
+    s.text(56, fy + 36,
+           "And the loop streams one timestep at a time, which is why peak RAM is flat "
+           "at ~250 MB whether the run covers one day or a year.", 11, t["muted"])
+    return s.done()
+
+
+# ===========================================================================
+# FIGURE 12 — the six phases, for V1_PIPELINE.md
+#
+# Same ladder the ASCII diagram drew, plus the two things it could not: which
+# transition is the expensive one, and why each artifact exists. Row heights are
+# computed from the wrapped text so editing a note cannot overlap the next row.
+# ===========================================================================
+V1_FLOW = [
+    dict(box=["city mesh", "OSM buildings + terrain · ~1 GB Unity project"],
+         note="No road network in it. The street surface is the absence of buildings, "
+              "which is a shape, not a graph."),
+    dict(phase=1, tool="RoadGraphExtractor.cs", when="Unity Editor · once",
+         box=["road_graph.json",
+              f"{model.WAYPOINTS:,} vertices · {model.EDGES:,} edges"],
+         note="Rasterise, dilate, BFS distance transform, keep the ridge line. Only "
+              "degree-1 and degree-2 nodes are ever removed, so junctions survive by "
+              "construction."),
+    dict(phase=2, tool="db_pipeline_initializer.py", when="once",
+         box=["meo_waypoints · meo_edges · meo_trees",
+              f"in PostGIS · {model.TREES:,} tree canopies"],
+         note="Six tables. This is the schema, and v2 does not change it."),
+    dict(phase=3, tool='ShadowAwarePathFinder — "Export Sample Points"', when="minutes",
+         box=["meo_sample_points",
+              f"{model.SAMPLE_POINTS:,} points at 2 m spacing"],
+         note="sequence_index and distance_from_start make an edge an ordered series "
+              "with a direction — what meo_edge_directional_cost() is built on."),
+    dict(phase=4, tool="generate_solar_positions.py · process_tree_data.py",
+         when="once per year",
+         box=["sun_pos_2026.bin",
+              f"{MINUTES_PER_YEAR:,} minute positions, local standard time",
+              "meo_sample_points.tree_value · meo_edges.total_tree_value"],
+         note="Both are time-invariant, so both are precomputed. Canopy shade becomes a "
+              "2D spatial join rather than geometry in the raycast path."),
+    dict(phase=5, tool='ShadowAwarePathFinder — "Export Exposure"',
+         when=f"{V1_WALL} — the run", run=True,
+         box=[f"meo_exposure_samples — {model.V1_ROWS:,} rows",
+              f"meo_exposure_edges — {V1_EDGE_ROWS:,} rows · derived"],
+         note=f"{model.V1_MEASURED_GB:.0f} GB with two indexes maintained inline. "
+              f"{model.V1_RAYCASTS:,} raycasts at {model.V1_ROW_RATE:,.0f} rows/s on one "
+              f"thread. Peak RAM ~250 MB, flat."),
+]
+
+
+def fig_v1_phases(theme: str) -> str:
+    t = THEMES[theme]
+    W = 860
+    BOX_X, BOX_W = 96, 452
+    NOTE_X, NOTE_W = 572, 248
+    ARROW_H, TOP = 38, 84
+
+    # Lay the ladder out first: every row is as tall as the taller of its two
+    # columns, so a longer note pushes the next stage down instead of colliding.
+    rows, y = [], TOP
+    for st in V1_FLOW:
+        notes = wrap(st["note"], 9, NOTE_W)
+        if "phase" in st:
+            y += ARROW_H
+        box_h = 22 + 15 * len(st["box"])
+        h = max(box_h, 10 + 11 * len(notes))
+        rows.append(dict(st=st, y=y, box_h=box_h, h=h, notes=notes))
+        y += h + 6
+
+    foot = wrap(f"Four of the five phases run once and are measured in minutes. The fifth "
+                f"is the simulation: {model.V1_RAYCASTS:,} raycasts against the city's "
+                f"BVH, {V1_WALL} on one thread. v2 changes only that last arrow — same "
+                f"inputs, same schema, same rows, on {model.WORKERS} workers and "
+                f"{model.SHARDS} database instances instead of one desktop.",
+                11, W - 80 - 32)
+    FY = y + 22
+    H = FY + 26 + 16 * len(foot)
+
+    s = SVG(W, H, t,
+            "v1's six phases as a ladder: the city mesh becomes a road graph, the graph "
+            "becomes PostGIS geometry and 365,133 sample points, a year of solar "
+            "positions and the static tree shade are precomputed, and only the last "
+            f"transition — {V1_WALL} of sweeping and raycasting — produces the "
+            f"{model.V1_ROWS:,} sample rows. Every earlier step runs once.")
+
+    s.text(40, 34, "The six phases, and which one costs six hours", 16, t["ink"],
+           weight="600")
+    s.text(40, 55, "Boxes are artifacts. Arrows are the phases that produce them, "
+                   "labelled with the tool that runs and what it costs.", 11.5,
+           t["muted"])
+    s.text(W - 40, 34, "V1_PIPELINE.md", 9.5, t["muted"], anchor="end", weight="600")
+
+    # setup / run brackets, the grouping the ASCII ladder could not show
+    setup_top, setup_bot = rows[0]["y"], rows[-2]["y"] + rows[-2]["h"]
+    run_top, run_bot = rows[-1]["y"] - ARROW_H, rows[-1]["y"] + rows[-1]["h"]
+    for top, bot, label, colour in ((setup_top, setup_bot, "ONE-TIME SETUP", t["v1"]),
+                                    (run_top, run_bot, "THE RUN", t["accent"])):
+        s.rect(56, top, 4, bot - top, colour, rx=2)
+        s.vtext(48, (top + bot) / 2, label, 8.5, colour, weight="700")
+
+    for i, r in enumerate(rows):
+        st, y = r["st"], r["y"]
+        run = st.get("run", False)
+
+        if "phase" in st:
+            ax = BOX_X + 26
+            colour = t["accent"] if run else t["axis"]
+            arrow(s, ax, y - ARROW_H + 6, ax, y - 5, colour, 2.4 if run else 1.4, 6.5)
+            s.text(ax + 16, y - ARROW_H + 18, f"phase {st['phase']}", 9,
+                   t["accent"] if run else t["ink2"], weight="700")
+            s.text(ax + 66, y - ARROW_H + 18, st["tool"], 9,
+                   t["ink"] if run else t["ink2"], family=MONO)
+            s.text(BOX_X + BOX_W, y - ARROW_H + 18, st["when"], 9.5,
+                   t["accent"] if run else t["muted"], anchor="end",
+                   weight="700" if run else "400")
+
+        s.rect(BOX_X, y, BOX_W, r["box_h"], t["panel"], rx=6,
+               stroke=t["accent"] if run else None, sw=1.5)
+        s.rect(BOX_X, y, 3, r["box_h"], t["accent"] if run else t["v2"], rx=1.5)
+        s.circle(BOX_X + 26, y + 20, 11, t["accent"] if run else t["v2"])
+        s.text(BOX_X + 26, y + 24, str(i), 11, t["on_v2"], anchor="middle",
+               weight="700")
+        for j, ln in enumerate(st["box"]):
+            s.text(BOX_X + 48, y + 24 + j * 15, ln, 11 if j == 0 else 9.5,
+                   t["ink"] if j == 0 else t["ink2"],
+                   weight="700" if j == 0 else "400",
+                   family=MONO if j == 0 or "meo_" in ln or ".bin" in ln else None)
+        if run:
+            s.rect(BOX_X + BOX_W - 88, y + 10, 78, 15, t["accent"], rx=7.5)
+            s.text(BOX_X + BOX_W - 49, y + 21, "THE PRODUCT", 8.5, t["on_v2"],
+                   anchor="middle", weight="700")
+        for j, ln in enumerate(r["notes"]):
+            s.text(NOTE_X, y + 18 + j * 11, ln, 9, t["muted"])
+
+    s.rect(40, FY, W - 80, 26 + 16 * len(foot), t["panel"], rx=6)
+    for j, ln in enumerate(foot):
+        s.text(56, FY + 20 + j * 16, ln, 11, t["ink2"] if j == 0 else t["muted"])
+    return s.done()
+
+
 def fig_failure(theme: str) -> str:
     t = THEMES[theme]
     W, H = 860, 340
@@ -1464,6 +1780,8 @@ FIGURES = {
     "phase_breakdown": fig_phase_breakdown,
     "row_anatomy": fig_row_anatomy,
     "directional_cost": fig_directional_cost,
+    "v1_dataflow": fig_v1_dataflow,
+    "v1_phases": fig_v1_phases,
     "failure_timeline": fig_failure,
     "feasibility_map": fig_feasibility,
     "worker_ceiling": fig_worker_ceiling,

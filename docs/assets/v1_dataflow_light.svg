@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="484" viewBox="0 0 860 484" role="img" aria-label="v1's dataflow: three precomputed static inputs — the road graph and its 365,133 sample points, 525,600 minute-resolution solar positions, and 1,280,954 tree canopies joined in 2D — all feed one Unity loop that sweeps time and raycasts, writing 1,577,374,560 sample rows in 6 h 00 min on one thread, plus a derived per-edge table of 28,944,000 rows.">
+<rect width="860" height="484" fill="#fcfcfb"/>
+<text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">v1 in one pass: three static inputs, one oracle, one product</text>
+<text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Everything on the left is computed once. All six hours are spent inside the middle box.</text>
+<text x="820.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">MEASURED · one desktop, 6 h 00 min</text>
+<rect x="40.0" y="96.0" width="226.0" height="92.0" rx="6" fill="#f4f4f1"/>
+<rect x="40.0" y="96.0" width="3.0" height="92.0" rx="1.5" fill="#256abf"/>
+<text x="54.0" y="112.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="700" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">GEOMETRY · once</text>
+<text x="54.0" y="129.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">road_graph.json → PostGIS</text>
+<text x="54.0" y="144.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">4,168 waypoints · 6,700 edges</text>
+<text x="54.0" y="156.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">365,133 sample points at 2 m</text>
+<text x="54.0" y="172.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">RoadGraphExtractor.cs</text>
+<text x="54.0" y="183.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">  → db_pipeline_initializer.py</text>
+<line x1="272.0" y1="142.0" x2="316.0" y2="142.0" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="316.0" y1="142.0" x2="311.3" y2="144.9" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="316.0" y1="142.0" x2="311.3" y2="139.1" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<rect x="40.0" y="200.0" width="226.0" height="92.0" rx="6" fill="#f4f4f1"/>
+<rect x="40.0" y="200.0" width="3.0" height="92.0" rx="1.5" fill="#256abf"/>
+<text x="54.0" y="216.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="700" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">SUN · once per year</text>
+<text x="54.0" y="233.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">pvlib ephemeris</text>
+<text x="54.0" y="248.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">525,600 minute positions</text>
+<text x="54.0" y="260.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">indexed in local standard time, never local time</text>
+<text x="54.0" y="276.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">generate_solar_positions.py</text>
+<line x1="272.0" y1="246.0" x2="316.0" y2="246.0" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="316.0" y1="246.0" x2="311.3" y2="248.9" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="316.0" y1="246.0" x2="311.3" y2="243.1" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<rect x="40.0" y="304.0" width="226.0" height="92.0" rx="6" fill="#f4f4f1"/>
+<rect x="40.0" y="304.0" width="3.0" height="92.0" rx="1.5" fill="#256abf"/>
+<text x="54.0" y="320.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="700" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">TREES · once</text>
+<text x="54.0" y="337.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">1,280,954 canopies</text>
+<text x="54.0" y="352.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">time-invariant, so a 2D PostGIS spatial join</text>
+<text x="54.0" y="364.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">— canopy geometry never enters a ray</text>
+<text x="54.0" y="380.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">process_tree_data.py</text>
+<line x1="272.0" y1="350.0" x2="316.0" y2="350.0" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="316.0" y1="350.0" x2="311.3" y2="352.9" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="316.0" y1="350.0" x2="311.3" y2="347.1" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<rect x="322.0" y="96.0" width="244.0" height="300.0" rx="6" fill="#f4f4f1" stroke="#256abf" stroke-width="1.5"/>
+<text x="338.0" y="116.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#256abf" text-anchor="start" style="font-variant-numeric:tabular-nums">UNITY AS A GEOMETRIC ORACLE</text>
+<text x="338.0" y="132.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">Nothing renders. The only thing wanted from it</text>
+<text x="338.0" y="143.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">is Physics.Raycast against a BVH over the</text>
+<text x="338.0" y="154.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">city's mesh colliders.</text>
+<rect x="332.0" y="160.0" width="224.0" height="80.0" rx="4" fill="#fcfcfb"/>
+<text x="338.0" y="172.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">for date in 12 dates:</text>
+<text x="338.0" y="183.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">  for step in 360 timesteps:</text>
+<text x="338.0" y="194.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">    if sun_altitude &gt; 5°:</text>
+<text x="338.0" y="205.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="700" fill="#c2410c" text-anchor="start" style="font-variant-numeric:tabular-nums">      raycast every sample point</text>
+<text x="338.0" y="216.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">    else: shadowed, no ray cast</text>
+<text x="338.0" y="227.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.5" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">    binary COPY the window</text>
+<text x="338.0" y="260.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">990,240,696 raycasts</text>
+<rect x="338.0" y="268.0" width="133.1" height="10.0" rx="2" fill="#c2410c"/>
+<rect x="471.1" y="268.0" width="78.9" height="10.0" rx="2" fill="#9ec5f4"/>
+<text x="338.0" y="292.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">63% of timesteps are above the horizon guard; the</text>
+<text x="338.0" y="303.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">other 37% are declared shadowed without a ray.</text>
+<line x1="338.0" y1="330.0" x2="550.0" y2="330.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/>
+<text x="338.0" y="352.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="12" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">6 h 00 min · one thread</text>
+<text x="338.0" y="368.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">73,027 rows/s · ~250 MB RAM, flat</text>
+<rect x="622.0" y="96.0" width="198.0" height="163.0" rx="6" fill="#f4f4f1" stroke="#c2410c" stroke-width="1.5"/>
+<rect x="636.0" y="108.0" width="74.0" height="15.0" rx="7.5" fill="#c2410c"/>
+<text x="673.0" y="119.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.5" font-weight="700" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">THE PRODUCT</text>
+<text x="636.0" y="142.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="10.5" font-weight="700" fill="#0b0b0b" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exposure_samples</text>
+<text x="636.0" y="164.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="16" font-weight="700" fill="#256abf" text-anchor="start" style="font-variant-numeric:tabular-nums">1,577,374,560</text>
+<text x="636.0" y="178.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">rows</text>
+<text x="636.0" y="196.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">Written straight out of the loop by</text>
+<text x="636.0" y="207.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">binary COPY. One row per (sample</text>
+<text x="636.0" y="218.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">point, timestep), carrying one bit —</text>
+<text x="636.0" y="229.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">110 GB with two indexes maintained</text>
+<text x="636.0" y="240.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">inline.</text>
+<rect x="622.0" y="277.0" width="198.0" height="95.0" rx="6" fill="#f4f4f1"/>
+<text x="636.0" y="299.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="10.5" font-weight="700" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">meo_exposure_edges</text>
+<text x="636.0" y="319.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" font-weight="700" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">28,944,000</text>
+<text x="636.0" y="331.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">rows</text>
+<text x="636.0" y="345.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">Derived afterwards by a SQL rollup,</text>
+<text x="636.0" y="356.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">and regenerable from the samples at</text>
+<text x="636.0" y="367.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">any time.</text>
+<line x1="572.0" y1="246.0" x2="592.0" y2="246.0" stroke="#898781" stroke-width="1.4" stroke-linecap="butt"/>
+<line x1="592.0" y1="177.5" x2="592.0" y2="324.5" stroke="#898781" stroke-width="1.4" stroke-linecap="butt"/>
+<line x1="592.0" y1="177.5" x2="616.0" y2="177.5" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="616.0" y1="177.5" x2="611.3" y2="180.4" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="616.0" y1="177.5" x2="611.3" y2="174.6" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="592.0" y1="324.5" x2="616.0" y2="324.5" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="616.0" y1="324.5" x2="611.3" y2="327.4" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<line x1="616.0" y1="324.5" x2="611.3" y2="321.6" stroke="#898781" stroke-width="1.4" stroke-linecap="round"/>
+<rect x="40.0" y="416.0" width="780.0" height="50.0" rx="6" fill="#f4f4f1"/>
+<text x="56.0" y="435.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start" style="font-variant-numeric:tabular-nums">The ephemeris and the 1.28 million canopies are both time-invariant, so both are precomputed and joined — neither is ever raycast.</text>
+<text x="56.0" y="452.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">And the loop streams one timestep at a time, which is why peak RAM is flat at ~250 MB whether the run covers one day or a year.</text>
+</svg>
