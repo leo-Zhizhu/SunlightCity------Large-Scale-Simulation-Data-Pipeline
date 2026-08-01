@@ -95,6 +95,16 @@ def facts() -> list[tuple[str, str, list[str]]]:
          [r"\b14,?787,?900\b", r"\b14\.8\s*M\b"]),
         ("cluster worth", f"{m.total_seconds(m.WORKERS, 1) / m.total_seconds():.1f}x",
          [r"\b6\.1\s*[x×]"]),
+        # One rendering per number. A rounded-down second spelling of the headline
+        # speedup ("161x" beside "161.5x") sat in five places, and the write-imbalance
+        # figure had drifted to two different stale values.
+        ("speedup, one rendering", f"{m.speedup():.1f}x",
+         [r"\b161\s*[x×]", r"\b162\s*[x×]"]),
+        ("write imbalance", "1.05x", [r"\b1\.0[678]\s*[x×]"]),
+        # cluster.py --show prints these; both had drifted in two comparison tables.
+        ("read contiguity", "0.66", [r"contiguity\s*\|\s*\*\*0\.6[578]\*\*",
+                                     r"contiguity\s+(?:measures\s+)?\*\*0\.7"]),
+        ("hash contiguity baseline", "0.11", [r"\*\*0\.66\*\*\s*\|\s*0\.10\s*\|"]),
         ("per-task ray time", "0.88 s", [flex("~1.8 s"), flex("3.1 s per task")]),
         ("socket share", "43%", [r"\b42%\s+of\s+(?:its|the)\b"]),
         ("affinity group size", f"{m.DAYS}",

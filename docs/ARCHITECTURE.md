@@ -129,7 +129,7 @@ Workers held fixed at 54; only the number of database instances varies.
 
 Three things to take from that table.
 
-**The cluster is worth 6.4× of the 161× total.** The remaining 4.05× per worker comes
+**The cluster is worth 6.4× of the 161.5× total.** The remaining 4.05× per worker comes
 from batched raycasts and BVH locality ([OPTIMIZATION.md](OPTIMIZATION.md)); 54 pods
 multiply it. Neither half alone gets close.
 
@@ -225,8 +225,8 @@ Measured on the reference topology:
 
 | | Hilbert + balanced cut | a hash of section ids |
 |---|---:|---:|
-| write imbalance (max/mean) | **1.07×** | ~1.0× |
-| read contiguity | **0.68** | 0.10 |
+| write imbalance (max/mean) | **1.05×** | ~1.0× |
+| read contiguity | **0.66** | ~0.11 |
 | routes touching one shard | **85%** | ~30% |
 
 The cut is **exact, not greedy**: minimising the heaviest of *k* contiguous runs is the
@@ -424,7 +424,7 @@ and the main loop reaps completions separately from producing them.
 | fleet spin-up | 45 s | 7% | image pull (warm) + engine boot + scene load + BVH warm |
 | **map** | **8m 14s** | **74%** | `max(raycast 8m 14s, write 6m 05s)` — compute-bound |
 | reduce | 2m 10s | 19% | nine shards in parallel |
-| **total** | **11m 09s** | | **161× v1** |
+| **total** | **11m 09s** | | **161.5× v1** |
 
 **Writing is free.** The map phase costs `max(raycast, write)`, not their sum, because
 a finished window is handed to a writer thread on a second connection while the main
