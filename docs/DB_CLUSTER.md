@@ -59,19 +59,26 @@ ingest is bounded by its cores, not by its disk:
 
 ### The answer
 
-```
-14,787,900 / 2,400,000  =  6.2   →  minimum 7 shards
-deployed                             10        +35% headroom
-```
+| | | |
+|---|---:|---|
+| the fleet demands | 15,970,917 rows/s | 54 workers × 295,758 |
+| one instance supplies | ÷ 2,400,000 rows/s | 12 streams × 200,000 |
+| | **= 6.65** | so **7 shards** is the bare minimum |
+| **deployed** | **9** | **+35% ingest headroom** |
 
-**Why headroom rather than the minimum.** At exactly the balance point, any hiccup on
-any instance — a checkpoint, an autovacuum, a slow disk — propagates straight into
-fleet stall time, because there is nowhere for the work to go. Ten instances means the
-write side finishes in 6m 34s against the raycast side's 8m 53s, so the fleet is
-compute-bound with 26% of the writer's time idle. That idle time is the buffer.
+**Why headroom rather than the minimum.** At exactly the balance point any hiccup on any
+instance — a checkpoint, an autovacuum, a slow disk — propagates straight into fleet stall
+time, because there is nowhere for the work to go. Nine instances means the write side
+finishes in 6m 05s against the raycast side's 8m 14s, so the fleet is compute-bound with
+26% of the writer's time idle. That idle time is the buffer.
 
-**Why not twenty.** Nine seconds, for double the database spend. And past ~25 it gets
-*worse*: fifty workers cannot offer enough concurrent streams to keep that many
+Nine is also not a judgement call: it is what `model.py --derive` returns from the
+15-minute deadline and the stress envelope, and the two structural conditions in that
+envelope are what rule out 7 and 8 — see
+[PERFORMANCE.md §5](../docs/PERFORMANCE.md#5-step-4--the-envelope).
+
+**Why not twenty.** 55 seconds, for more than double the database spend. And past ~27 it
+gets *worse*: 54 workers cannot offer enough concurrent streams to keep that many
 instances busy, so each one starves.
 
 ---

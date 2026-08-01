@@ -53,8 +53,15 @@ timestamp). Nothing is aggregated away to make the numbers easier; the per-sampl
 including a measurement of what the alternative would have saved, is in
 [DB_CLUSTER.md](DB_CLUSTER.md#what-one-row-is-precisely).
 
-**The deadline is 15 minutes.** A full 60-date run, end to end — from machines starting to
-the last database finishing its wrap-up.
+**The deadline is 15 minutes** — **900 seconds**. A full 60-date run, end to end, from
+machines starting to the last database finishing its wrap-up.
+
+> **Two numbers, and it is worth keeping them apart.** **15 minutes is the deadline** — the
+> requirement, fixed before any hardware exists, and the thing every sizing decision in
+> §4–§6 is tested against. **11m 09s is the result** — what the derived deployment actually
+> achieves, with 26% of the budget left over. Wherever both appear, the deadline is the one
+> being *met* and the runtime is the one *doing* the meeting. The formula in §3 works in
+> seconds, so the deadline also appears as `900 s`; they are the same requirement.
 
 ### What that implies before any hardware is chosen
 
@@ -231,8 +238,8 @@ data moving between instances:
 
 45 seconds from a machine being scheduled to it claiming its first task: process start,
 game engine boot, loading the city model, and warming the BVH. It is counted rather than
-ignored, because at an 11-minute target it is not negligible, and leaving it out would make
-the model wrong in the one direction that flatters it.
+ignored: against a 15-minute budget, 45 s is 5% of the whole allowance, and leaving it out
+would make the model wrong in the one direction that flatters it.
 
 ### Putting the measurements together
 
@@ -481,7 +488,7 @@ coincidence, it is the constraint from §2 showing up in
 | dates covered | 12 | **60** |
 | rows written | 1,577,374,560 | **7,886,872,800** |
 | raycasts fired | 990,240,696 | 4,952,298,879 |
-| **wall clock** | **6 h 00 min** | **11 min 09 s** |
+| **wall clock** | **6 h 00 min** | **11m 09s** |
 | row rate | 73,027 / s | 15,970,917 / s |
 | per worker | 73,027 / s | 295,758 / s |
 | sample storage | 110 GB (2 inline indexes) | 499 GB (no index) |
@@ -837,7 +844,15 @@ python distributed/orchestrator/cluster.py --show --shards 9
 python distributed/orchestrator/make_impact_figures.py docs/assets
 ```
 
-And to confirm the schema behaves as described, against a real PostgreSQL:
+And to confirm the documentation still agrees with the model — every figure in this file
+is recomputed from `model.py` and compared against the values it superseded:
+
+```bash
+python distributed/orchestrator/check_docs.py       # exits non-zero on any stale figure
+python distributed/orchestrator/check_docs.py -v    # list the 18 quantities checked
+```
+
+Finally, to confirm the schema behaves as described, against a real PostgreSQL:
 
 ```bash
 distributed/db/tests/run_selftest.sh        # 45 assertions

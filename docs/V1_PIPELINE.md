@@ -393,7 +393,7 @@ Full setup, including the Unity project download: [`../SetUp Guide.md`](../SetUp
 | Work unit | a bounding box, run to completion | (section, date, 3 h window) — 30,240 leased tasks |
 | Databases | 1 | 1 coordinator + 9 data shards |
 | Wire format | CSV text, one string per row | binary COPY from a bitset, no allocation |
-| Wall clock | 6 h 00 min (12 dates) | 11 min 38 s (60 dates) |
+| Wall clock | 6 h 00 min (12 dates) | 11m 09s (60 dates) |
 | Failure recovery | restart the export (it resumes) | per-task, automatic, no coordinator |
 
 The row count is the point of that table. v2 is faster hardware and better I/O

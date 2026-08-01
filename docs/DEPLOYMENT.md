@@ -7,7 +7,7 @@ For *why* any of it is shaped this way, see [ARCHITECTURE.md](ARCHITECTURE.md),
 [DB_CLUSTER.md](DB_CLUSTER.md) and [TUNING.md](TUNING.md).
 
 **Total time: ~4 hours, almost all of it building the Unity image.** The pipeline itself
-runs in 11 min 38 s.
+runs in 11m 09s, against a 15-minute deadline.
 
 ---
 
