@@ -13,7 +13,7 @@
 #
 #   So there are nine of them — the count `model.py --derive` returns for a
 #   15-minute deadline. `python model.py --sweep` shows what it is worth:
-#   54 workers on ONE instance finish in 1.18 h; on nine, 11m 08.7s.
+#   54 workers on ONE instance finish in 1.18 h; on nine, 11m 09s.
 #
 #
 # WHY TWO KINDS OF INSTANCE AND NOT ELEVEN OF ONE

@@ -326,8 +326,9 @@ ANALYZE_SECONDS        = 30           # 3,360 leaves per shard via vacuumdb --an
 # ===========================================================================
 # FLEET SPIN-UP
 #
-# Counted, not waved away: at the deployed 11-minute runtime it is 7% of wall clock, and
-# together with ANALYZE_SECONDS it forms the 75 s floor no hardware beats.
+# Counted, not waved away: it is 5% of the 15-minute BUDGET and 7% of the achieved
+# 11m 09s RUNTIME, and together with ANALYZE_SECONDS it forms the 75 s floor no
+# hardware beats. (Those are two different denominators; the docs keep them apart.)
 # Warm image cache + engine boot + scene load + whole-city BVH warm.
 # ===========================================================================
 FLEET_STARTUP_SECONDS = 45
@@ -397,8 +398,9 @@ BENCHMARKS = [
      "INDEX_BUILD_ROWS_PER_S"),
     ("B8", "fleet spin-up", 45, "s",
      "Pod scheduled to first task claimed, warm image cache: engine boot, scene "
-     "load, whole-city BVH warm. Counted rather than waved away — at an 11-minute "
-     "runtime it is 7% of wall clock and it does not shrink with more workers.",
+     "load, whole-city BVH warm. Counted rather than waved away: against the "
+     "15-minute budget it is 5% of the whole allowance, it is 7% of the achieved "
+     "11m 09s runtime, and it shrinks with nothing at all.",
      "FLEET_STARTUP_SECONDS"),
     ("B9", "ANALYZE the leaf tree", 30, "s",
      "vacuumdb --analyze --jobs 8 over one shard's 3,360 leaves. A floor: it does "

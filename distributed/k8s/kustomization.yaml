@@ -68,7 +68,7 @@ images:
 #
 # Adding workers without adding shards converts a compute-bound pipeline into an
 # I/O-bound one, which is the exact failure this architecture exists to avoid: 54
-# workers against ONE instance finish in 1.18 h; against nine, 11m 08.7s. Run
+# workers against ONE instance finish in 1.18 h; against nine, 11m 09s. Run
 # `python distributed/orchestrator/model.py --workers-sweep` for the minimum shard
 # count at any fleet size.
 #

@@ -11,8 +11,8 @@ the router that consumes it needs to know which way you are walking.
 
 **v1** — 365,133 sample points × 360 timesteps × **12 dates** = **1.58 billion rows**,
 on one desktop, in 6 hours.
-**v2** — the same simulation over **60 dates** = **7.89 billion rows**, on 50 Kubernetes
-workers and 11 PostgreSQL instances, in **11 min 38 s**.
+**v2** — the same simulation over **60 dates** = **7.89 billion rows**, on 54 Kubernetes
+workers and 10 PostgreSQL instances, in **11m 09s** against a 15-minute deadline.
 
 [![Unity](https://img.shields.io/badge/Unity-2022.3_LTS-000000?logo=unity&logoColor=white)](https://unity.com/)
 [![Headless](https://img.shields.io/badge/build-headless_Linux_IL2CPP-222?logo=linux&logoColor=white)](distributed/unity/Editor/HeadlessBuildScript.cs)
@@ -25,7 +25,7 @@ workers and 11 PostgreSQL instances, in **11 min 38 s**.
 <table>
 <tr>
 <td align="center" width="25%"><h3>11m 09s</h3><sub><b>for 7.89 billion rows</b><br>a 15-minute deadline,<br>with 26% in hand</sub></td>
-<td align="center" width="25%"><h3>6.4×</h3><sub><b>from the DB cluster alone</b><br>54 workers on 1 instance: 1.2 h<br>on 9: 11 m 09 s</sub></td>
+<td align="center" width="25%"><h3>6.4×</h3><sub><b>from the DB cluster alone</b><br>54 workers on 1 instance: 1.2 h<br>on 9: 11m 09s</sub></td>
 <td align="center" width="25%"><h3>~0</h3><sub><b>WAL for a 500 GB load</b><br>create-then-attach<br>+ <code>wal_level=minimal</code></sub></td>
 <td align="center" width="25%"><h3>0</h3><sub><b>coordinators</b><br>an unrenewed lease<br>is the failure signal</sub></td>
 </tr>
@@ -219,7 +219,7 @@ Same simulation. Same rows. 54 workers and 10 PostgreSQL instances — both numb
 ## 0 · How much hardware, and why exactly that much
 
 The work is fixed: 7,886,872,800 observations at v1's exact schema, nothing aggregated
-away. The **deadline** is fixed too — a full 60-date run in under 15 minutes. Neither the
+away. The **deadline** is fixed too — a full 60-date run in under **15 minutes**. Neither the
 fleet size nor the instance count is given; both are derived from those two facts.
 
 Nine benchmarks, each isolating one lever, compose into a single expression:
@@ -498,10 +498,12 @@ completeness check would pass.
 
 ## Verified, not asserted
 
-The schema and queue semantics are checked against a real PostgreSQL 16 + PostGIS 3.4:
+The schema and queue semantics are checked against a real PostgreSQL 16 + PostGIS 3.4,
+and the documentation is checked against the capacity model:
 
 ```bash
-distributed/db/tests/run_selftest.sh        # 45 assertions
+distributed/db/tests/run_selftest.sh                # 45 assertions
+python distributed/orchestrator/check_docs.py       # 18 quantities, tree-wide
 ```
 
 | | |
@@ -532,7 +534,7 @@ check.
 | dates covered | 12 | **60** |
 | rows written | 1,577,374,560 | **7,886,872,800** |
 | raycasts fired | 990,240,696 | 4,952,298,879 |
-| **wall clock** | **6 h 00 min** | **11 min 09 s** |
+| **wall clock** | **6 h 00 min** | **11m 09s** |
 | row rate | 73,027 / s | 15,970,917 / s |
 | per worker | 73,027 / s | 295,758 / s |
 | sample storage | 110 GB (2 inline indexes) | 499 GB (no index) |
@@ -625,7 +627,7 @@ Full breakdown and sensitivity: **[PERFORMANCE.md](docs/PERFORMANCE.md)**.
 
 **v2, on a cluster:** [DEPLOYMENT.md](docs/DEPLOYMENT.md) — thirteen numbered steps with a
 check after each. ~4 hours, almost all of it building the Unity image; the pipeline itself
-is 11 min 38 s.
+is 11m 09s.
 
 **Neither, just the reasoning:** everything in
 [`model.py`](distributed/orchestrator/model.py) and
