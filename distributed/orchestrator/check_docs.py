@@ -106,7 +106,14 @@ def facts() -> list[tuple[str, str, list[str]]]:
           r"\b900\s*s\s+TTL\b", r"lease_seconds\s+INTEGER\s+DEFAULT\s+900"]),
         ("heartbeat seconds", f"{model.HEARTBEAT_SECONDS}",
          [r"heartbeat\s+every\s+15\s*s\b"]),
-        ("self-test assertions", "48", [r"\b45\s+assertions\b"]),
+        # Badge text uses underscores for spaces, so a plain "\s+" rule slides straight
+        # past "50_workers" and "45_assertions". Both were stale in the README's badge
+        # row for several commits with every other check passing.
+        ("self-test assertions", "48", [r"\b45[\s_]assertions\b"]),
+        ("badge: worker count", str(model.WORKERS),
+         [r"Kubernetes-(?!%d_)\d+_workers" % model.WORKERS]),
+        ("badge: instance count", str(model.SHARDS + 1),
+         [r"PostGIS-(?!%d_)\d+_instance" % (model.SHARDS + 1)]),
         ("deadline", "15 minutes",
          [r"\b11[-\s]minute\s+(?:target|deadline|budget)\b",
           r"\b12[-\s]minute\s+(?:runtime|target)\b"]),
