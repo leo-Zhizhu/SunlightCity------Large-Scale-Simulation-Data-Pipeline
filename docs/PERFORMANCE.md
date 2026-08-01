@@ -586,8 +586,8 @@ isolates the database's contribution from the fleet's.
 | 20 | 16.0M/s | 8m 14s | 1m 15s | 10m 14s | 176.0× | compute |
 | 30 | 12.0M/s | 10m 57s | 60 s | 12m 42s | 141.7× | I/O again |
 
-**The cluster is worth 6.4× of the 161× total.** The same 54 workers against one instance
-reach 25.4×; against nine, 161×. Adding workers alone would have bought almost none of it,
+**The cluster is worth 6.4× of the 161.5× total.** The same 54 workers against one instance
+reach 25.4×; against nine, 161.5×. Adding workers alone would have bought almost none of it,
 which is the central finding of the rewrite.
 
 **Three shard counts are interesting for different reasons.**
@@ -773,8 +773,8 @@ holds even if this section's optimistic entries all bite at once.
 - **Cold image pull.** B8 assumes a warm image cache. A genuinely cold 54-node pull of a
   400 MB image adds 30–60 s depending on registry bandwidth, nearly doubling the spin-up
   term.
-- **Shard imbalance.** Modelled as zero; measured at 1.06× on the reference topology, so the
-  slowest instance takes ~6% longer than the mean. `plan_tasks.py` refuses above 1.25×.
+- **Shard imbalance.** Modelled as zero; measured at 1.05× on the reference topology, so the
+  slowest instance takes ~5% longer than the mean. `plan_tasks.py` refuses above 1.25×.
 - **Straggler tasks.** LPT bounds makespan at 4/3 of optimal in the worst case; the model
   assumes perfect packing.
 

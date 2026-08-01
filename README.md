@@ -28,7 +28,7 @@ model that ships in the repo and re-runs in a single command.
 <table>
 <tr>
 <td align="center" width="25%"><h3>7.89 billion</h3><sub><b>measurements, kept in full</b><br>365,133 street positions ×<br>360 times a day × 60 days<br><i>nothing averaged away</i></sub></td>
-<td align="center" width="25%"><h3>161x faster</h3><sub><b>end to end, cut the work from </b><br>30 hours on one machine<br> to <b>11min 09s on the cluster</b>, 26%<br>inside a 15-minute deadline</sub></td>
+<td align="center" width="25%"><h3>161.5× faster</h3><sub><b>end to end, cut the work from </b><br>30 hours on one machine<br> to <b>11min 09s on the cluster</b>, 26%<br>inside a 15-minute deadline</sub></td>
 <td align="center" width="25%"><h3>16M rows/s</h3><sub><b>sustained into PostgreSQL</b><br>500 GB written with fine-tuned db parameters and optimized schema design</sub></td>
 <td align="center" width="25%"><h3>54 &amp; 9</h3><sub><b>workers &amp; DB shards —<br>derived, not guessed</b><br>from the deadline<br></sub></td>
 </tr>
@@ -321,7 +321,7 @@ of the fleet would sit waiting.
 | 20 | 10m 14s | 176.0× | compute |
 | 30 | 12m 42s | 141.7× | I/O again |
 
-**The cluster is worth 6.4× of the 161× total.** The other 4.05× is per-worker
+**The cluster is worth 6.4× of the 161.5× total.** The other 4.05× is per-worker
 ([§3](#3--the-work-inside-one-worker)); 54 pods multiply it. Neither half alone gets
 close, and **adding workers alone would have bought almost none of it.**
 
@@ -366,8 +366,8 @@ region, so one cut satisfies both:
 
 | | Hilbert + balanced cut | a hash |
 |---|---:|---:|
-| write imbalance | **1.07×** | ~1.0× |
-| read contiguity | **0.68** | 0.10 |
+| write imbalance | **1.05×** | ~1.0× |
+| read contiguity | **0.66** | ~0.11 |
 | routes touching one shard | **85%** | ~30% |
 
 The cut is **exact** — minimising the heaviest of *k* contiguous runs is the linear-
@@ -680,7 +680,7 @@ Stated plainly, because they are visible in the published data.
   `db_pipeline_initializer.py` is a naive pairwise sweep — minutes at Manhattan scale, a
   one-time cost, but a spatial hash is the fix before scaling to another city.
 - **Shard imbalance is reported and gated, not eliminated.** `plan_tasks.py` refuses a
-  topology above 1.25× `max/mean`; the reference topology is 1.07×. A smaller
+  topology above 1.25× `max/mean`; the reference topology is 1.05×. A smaller
   `--section-meters` gives the balanced cut finer granularity.
 - **There is no rebalancing tool.** Changing the shard count moves data;
   re-running the pipeline takes twelve minutes, which is faster than any migration would be

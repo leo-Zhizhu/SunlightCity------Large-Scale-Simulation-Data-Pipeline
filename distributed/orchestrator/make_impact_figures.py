@@ -394,92 +394,94 @@ STATIC_SUN_S = STATIC_SUN_N * FIXTURE["spacing_m"] / FIXTURE["speed_mps"]  # 532
 # ===========================================================================
 def fig_shard_scaling(theme: str) -> str:
     t = THEMES[theme]
-    W, H = 860, 400
+    W, H = 880, 436
     t1 = model.total_seconds(model.WORKERS, 1)
     tN = model.total_seconds()
+    eq = model.v1_equivalent_seconds()
 
     s = SVG(W, H, t,
             f"Wall clock against database shard count at a fixed {model.WORKERS} workers. "
-            f"One instance takes {fmt_t(t1)}; ten take {fmt_t(tN)}. Below eight shards "
-            f"the fleet is I/O-bound and waiting on the database.")
+            f"One instance takes {fmt_t(t1)}; the deployed {model.SHARDS} take {fmt_t(tN)}. "
+            f"Below {model.balanced_shards()} shards the fleet is I/O-bound and waiting on "
+            f"the database.")
 
     s.text(40, 34, "The bottleneck was never the raycasting", 16, t["ink"], weight="600")
     s.text(40, 55, f"Same {model.WORKERS} workers, same code. Only the number of "
                    "PostgreSQL instances changes.", 11.5, t["muted"])
     s.text(W - 40, 34, "MODELLED", 9.5, t["muted"], anchor="end", weight="600")
 
-    px, py, pw, ph = 78, 88, W - 78 - 170, 216
+    px, py, pw, ph = 86, 96, W - 86 - 186, 224
     shards = list(range(1, 21))
     times = [model.total_seconds(model.WORKERS, k) for k in shards]
-    t_max, t_min = max(times) * 1.06, 0.0
+    t_max = max(times) * 1.06
 
     def sx(k): return px + pw * (k - 1) / (len(shards) - 1)
-    def sy(v): return py + ph * (1 - (v - t_min) / (t_max - t_min))
+    def sy(v): return py + ph * (1 - v / t_max)
 
-    # gridlines at round minute marks
-    for mins in range(0, int(t_max // 60) + 1, 3):
+    # Gridline spacing chosen so there are ~6 of them. A fixed 3-minute step put 24
+    # labels on a 75-minute axis and they overprinted each other into a grey smear.
+    span_min = t_max / 60
+    step = next(x for x in (1, 2, 5, 10, 15, 20, 30, 60) if span_min / x <= 8)
+    for mins in range(0, int(span_min) + 1, step):
         y = sy(mins * 60)
-        if y < py: continue
+        if y < py:
+            continue
         s.line(px, y, px + pw, y, t["grid"], 1)
         s.text(px - 10, y + 4, f"{mins}m", 9.5, t["muted"], anchor="end")
+    s.vtext(px - 52, py + ph / 2, "wall clock", 10.5, t["ink2"])
     for k in (1, 5, 10, 15, 20):
         s.text(sx(k), py + ph + 18, str(k), 9.5, t["muted"], anchor="middle")
     s.text(px + pw / 2, py + ph + 38, "database shards", 10.5, t["ink2"], anchor="middle")
 
-    # I/O-bound region: shaded, because it is the point of the figure
+    # I/O-bound region. The curve dives from top-left to bottom-right through this
+    # band, so the label goes in its UPPER RIGHT corner, which the curve has already
+    # left by k=4. Centring it vertically put it straight through the line.
     kb = model.balanced_shards()
     s.rect(px, py, sx(kb) - px, ph, t["bad"], rx=0, opacity=0.07)
-    # Placed low in the band, not at the top: the curve's 1-shard endpoint label lives
-    # up there and the two collided.
-    s.text(px + (sx(kb) - px) / 2, py + ph * 0.72, "I/O-bound", 10.5, t["bad"],
-           anchor="middle", weight="700")
-    s.text(px + (sx(kb) - px) / 2, py + ph * 0.72 + 15, "fleet waits on the DB",
-           9, t["muted"], anchor="middle")
+    lx = px + (sx(kb) - px) * 0.62
+    s.text(lx, py + ph * 0.30, "I/O-bound", 10.5, t["bad"], anchor="middle", weight="700")
+    s.text(lx, py + ph * 0.30 + 15, "fleet waits on the DB", 9, t["muted"],
+           anchor="middle")
 
-    # the curve
     s.path("M " + " L ".join(f"{sx(k):.1f} {sy(v):.1f}" for k, v in zip(shards, times)),
            t["v2"], sw=2.5)
 
-    # the two endpoints that matter
-    for k, colour, label, sub in (
-        (1, t["v1"], f"1 shard — {fmt_t(t1)}", f"{model.V1_SECONDS / t1:.0f}x vs v1"),
-        (model.SHARDS, t["v2"], f"{model.SHARDS} shards — {fmt_t(tN)}",
-         f"{model.V1_SECONDS / tN:.0f}x vs v1"),
-    ):
-        v = model.total_seconds(model.WORKERS, k)
-        s.circle(sx(k), sy(v), 5, colour, stroke=t["surface"], sw=2)
-        anchor = "start" if k == 1 else "start"
-        s.text(sx(k) + 12, sy(v) - 6, label, 11.5, t["ink"], anchor=anchor, weight="700")
-        s.text(sx(k) + 12, sy(v) + 8, sub, 9.5, t["muted"], anchor=anchor)
-
-    # deployed marker
+    # deployed marker, drawn before the endpoint labels so they sit on top of it
     s.line(sx(model.SHARDS), py, sx(model.SHARDS), py + ph, t["accent"], 1.5, dash="4 3")
-    s.text(sx(model.SHARDS), py - 6, "deployed", 9.5, t["accent"], anchor="middle",
+    s.text(sx(model.SHARDS), py - 8, "deployed", 9.5, t["accent"], anchor="middle",
            weight="600")
 
-    # right-hand summary
-    bx = px + pw + 22
-    s.rect(bx, py, 128, 96, t["panel"], rx=6)
-    s.text(bx + 12, py + 22, f"{t1 / tN:.1f}x", 22, t["v2"], weight="700")
-    s.text(bx + 12, py + 40, "from the cluster", 10, t["ink2"])
-    s.text(bx + 12, py + 60, f"of the {model.V1_SECONDS / tN:.0f}x total", 9.5, t["muted"])
-    s.text(bx + 12, py + 76, f"the other {model.BATCH_SPEEDUP * model.LOCALITY_SPEEDUP:.1f}x",
-           9.5, t["muted"])
-    s.text(bx + 12, py + 88, "is per-worker", 9.5, t["muted"])
+    # The two endpoints. One line each: the "Nx vs v1" sub-lines used to sit under
+    # them and both landed on the curve. The speedups live in the panel instead.
+    s.circle(sx(1), sy(t1), 5, t["v1"], stroke=t["surface"], sw=2)
+    s.text(sx(1) + 14, sy(t1) + 4, f"1 shard — {fmt_t(t1)}", 11.5, t["ink"],
+           weight="700")
+    s.circle(sx(model.SHARDS), sy(tN), 5.5, t["v2"], stroke=t["surface"], sw=2)
+    s.text(sx(model.SHARDS) + 11, sy(tN) - 12, f"{model.SHARDS} shards — {fmt_t(tN)}",
+           11.5, t["ink"], weight="700")
 
-    # footer
-    fy = H - 74
-    s.rect(40, fy, W - 80, 56, t["panel"], rx=6)
-    s.text(56, fy + 20,
-           f"One instance absorbs ~{model.shard_max_streams() * model.COPY_ROWS_PER_STREAM / 1e6:.1f}M rows/s "
-           f"({model.shard_max_streams()} COPY streams on {model.SHARD_VCPU} vCPU, one busy CPU each). "
-           f"The fleet produces {model.WORKERS * model.WORKER_ROW_RATE / 1e6:.1f}M rows/s.",
-           11, t["ink2"])
-    s.text(56, fy + 38,
-           f"So the cluster needs at least {kb} to keep up at all. {model.SHARDS} are deployed — "
-           f"{model.io_headroom() * 100:+.0f}% headroom, so a checkpoint, a vacuum, or "
-           "losing an instance outright cannot stall the fleet.",
-           11, t["muted"])
+    # right-hand summary — work-normalised, which the old version was not: it divided
+    # by V1_SECONDS (v1's 6 h for TWELVE dates) and reported 32x against a 60-date run.
+    bx = px + pw + 30
+    s.rect(bx, py, 150, 176, t["panel"], rx=6)
+    s.text(bx + 14, py + 30, f"{t1 / tN:.1f}x", 24, t["v2"], weight="700")
+    s.text(bx + 14, py + 48, "from the cluster", 10, t["ink2"])
+    s.text(bx + 14, py + 72, f"of the {eq / tN:.1f}x total", 10, t["ink"], weight="600")
+    for i, ln in enumerate(("work-normalised:", f"v1 needs {fmt_t(eq)}",
+                            "for the same 60 dates")):
+        s.text(bx + 14, py + 88 + i * 12, ln, 8.6, t["muted"])
+    s.text(bx + 14, py + 148, f"1 shard is {eq / t1:.1f}x", 10, t["ink2"])
+    s.text(bx + 14, py + 162, f"the other {model.BATCH_SPEEDUP * model.LOCALITY_SPEEDUP:.1f}x "
+           f"per pod", 9, t["muted"])
+
+    s.footer(
+        f"One instance absorbs ~{model.shard_max_streams() * model.COPY_ROWS_PER_STREAM / 1e6:.1f}M "
+        f"rows/s ({model.shard_max_streams()} COPY streams on {model.SHARD_VCPU} vCPU, one "
+        f"busy CPU each), while the fleet produces "
+        f"{model.WORKERS * model.WORKER_ROW_RATE / 1e6:.1f}M rows/s. So the cluster needs at "
+        f"least {kb} to keep up at all. {model.SHARDS} are deployed — "
+        f"{model.io_headroom() * 100:+.0f}% headroom, so a checkpoint, a vacuum, or losing an "
+        f"instance outright cannot stall the fleet.")
     return s.done()
 
 
@@ -1991,7 +1993,7 @@ def fig_partition_tree(theme: str) -> str:
     t = THEMES[theme]
     W = 880
     X0, Y0 = 44, 96
-    s = SVG(W, 540, t,
+    s = SVG(W, 518, t,
             f"The two-level partition tree. meo_exposure_samples_p is partitioned by "
             f"LIST(section_id), each section by RANGE(datetime) into {model.TIME_WINDOWS} "
             f"windows per date, so one leaf is exactly one task: "
@@ -2004,10 +2006,10 @@ def fig_partition_tree(theme: str) -> str:
 
     # Three nested frames, each inset from the last: the visual nesting IS the tree.
     levels = [
-        (X0, Y0, W - 88, 236, t["v2_light"], "meo_exposure_samples_p",
+        (X0, Y0, W - 88, 206, t["v2_light"], "meo_exposure_samples_p",
          "the logical table every consumer queries", "PARTITION BY LIST (section_id)",
          "which square kilometre"),
-        (X0 + 26, Y0 + 58, W - 88 - 52, 164, t["v2"], "meo_exp_s384",
+        (X0 + 26, Y0 + 58, W - 88 - 52, 138, t["v2"], "meo_exp_s384",
          f"one of {model.SECTIONS} sections · this one at grid (384)",
          "PARTITION BY RANGE (datetime)", "which date, and which 3 h window"),
     ]
@@ -2036,7 +2038,7 @@ def fig_partition_tree(theme: str) -> str:
            f"Each leaf is written by exactly one task, once.", 10, t["ink2"])
 
     # What the correspondence buys — the reason the figure exists at all.
-    by = Y0 + 260
+    by = Y0 + 234
     s.text(X0, by, "WHAT THE ONE-TO-ONE CORRESPONDENCE BUYS", 9.5, t["ink"], weight="700")
     items = [
         ("no lock contention", "twelve tasks append to twelve\ndifferent files, never the same one"),
