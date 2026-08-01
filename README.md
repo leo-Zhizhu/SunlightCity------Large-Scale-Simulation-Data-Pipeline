@@ -2,34 +2,41 @@
 
 # SunlightCity
 
-**A large-scale simulation data pipeline for shade-aware pedestrian routing.**
+### 7.89 billion sunlight measurements across Manhattan, computed in 11 minutes
 
-Unity's physics engine is used as a geometric oracle over a real 3D city model,
-measuring which patches of street are in sunlight at every 3-minute interval from 03:00
-to 21:00 — **one row per sample point per timestep**, kept at full resolution, because
-the router that consumes it needs to know which way you are walking.
+**A distributed simulation pipeline that turns a 3D city model into the dataset a
+shade-aware pedestrian router needs.**
 
-**v1** — 365,133 sample points × 360 timesteps × **12 dates** = **1.58 billion rows**,
-on one desktop, in 6 hours.
-**v2** — the same simulation over **60 dates** = **7.89 billion rows**, on 54 Kubernetes
-workers and 10 PostgreSQL instances, in **11m 09s** against a 15-minute deadline.
+The question it answers, 7.89 billion times: *at this exact spot on this street, at
+09:03 on 15 June — are you in sunlight, or in the shadow of a building?* Unity's physics
+engine answers one instance of it by casting a ray at the sun. **54 Kubernetes workers**
+and a **9-instance PostgreSQL cluster** answer all of them, and land 500 GB of results,
+in **11 minutes 9 seconds**.
+
+The same work takes **30 hours** on one machine. The fleet size and the cluster size were
+not picked by hand either — both are **derived from the 15-minute deadline** by a capacity
+model that ships in the repo and re-runs in a single command.
 
 [![Unity](https://img.shields.io/badge/Unity-2022.3_LTS-000000?logo=unity&logoColor=white)](https://unity.com/)
 [![Headless](https://img.shields.io/badge/build-headless_Linux_IL2CPP-222?logo=linux&logoColor=white)](distributed/unity/Editor/HeadlessBuildScript.cs)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-50_workers-326CE5?logo=kubernetes&logoColor=white)](distributed/k8s/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-54_workers-326CE5?logo=kubernetes&logoColor=white)](distributed/k8s/)
 [![PostGIS](https://img.shields.io/badge/PostGIS-10_instance_cluster-336791?logo=postgresql&logoColor=white)](distributed/db/)
-[![Self-test](https://img.shields.io/badge/schema_self--test-45_assertions-0ca30c?logo=postgresql&logoColor=white)](distributed/db/tests/)
+[![Self-test](https://img.shields.io/badge/schema_self--test-48_assertions-0ca30c?logo=postgresql&logoColor=white)](distributed/db/tests/)
 
 <br>
 
 <table>
 <tr>
-<td align="center" width="25%"><h3>11m 09s</h3><sub><b>for 7.89 billion rows</b><br>a 15-minute deadline,<br>with 26% in hand</sub></td>
-<td align="center" width="25%"><h3>6.4×</h3><sub><b>from the DB cluster alone</b><br>54 workers on 1 instance: 1.2 h<br>on 9: 11m 09s</sub></td>
-<td align="center" width="25%"><h3>~0</h3><sub><b>WAL for a 500 GB load</b><br>create-then-attach<br>+ <code>wal_level=minimal</code></sub></td>
-<td align="center" width="25%"><h3>0</h3><sub><b>coordinators</b><br>an unrenewed lease<br>is the failure signal</sub></td>
+<td align="center" width="25%"><h3>7.89 billion</h3><sub><b>measurements, kept in full</b><br>365,133 street positions ×<br>360 times a day × 60 days<br><i>nothing averaged away</i></sub></td>
+<td align="center" width="25%"><h3>11m 09s</h3><sub><b>end to end, for all of it</b><br>30 hours on one machine<br>→ <b>161× faster</b>, and 26%<br>inside a 15-minute deadline</sub></td>
+<td align="center" width="25%"><h3>16M rows/s</h3><sub><b>sustained into PostgreSQL</b><br>500 GB written with the<br>crash-recovery log skipped<br><b>entirely</b> — by schema design</sub></td>
+<td align="center" width="25%"><h3>54 &amp; 9</h3><sub><b>workers &amp; DB shards —<br>derived, not guessed</b><br>from the deadline, by<br><code>model.py --derive</code></sub></td>
 </tr>
 </table>
+
+<sub><b>Start here:</b> <a href="#0--how-much-hardware-and-why-exactly-that-much">how the hardware was sized</a> ·
+<a href="docs/PERFORMANCE.md">the full derivation</a> ·
+<a href="docs/ARCHITECTURE.md">why it is shaped this way</a></sub>
 
 </div>
 
