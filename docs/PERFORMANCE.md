@@ -169,10 +169,6 @@ worth understanding because they recur throughout this document:
    pointers to scattered places in RAM. Extra cores end up waiting on memory rather than
    computing, so they add much less than their number suggests.
 
-Assuming a clean 8× here would have overstated every downstream figure by 2.7×, which is
-the difference between a plan that works and one that misses the deadline by a factor of
-two.
-
 ### B3 — why staying inside one tile is worth 1.35×
 
 Same machine, same number of rays; the only change is *where the rays come from*. Drawn
