@@ -278,6 +278,28 @@ def main() -> int:
         warn(f"--shards {args.shards} is below the {minimum} that {args.workers} workers "
              f"need to stay compute-bound. Expect the fleet to wait on the database; "
              f"see `python model.py --sweep`.")
+
+    # The lease ceiling. This is checked HERE and nowhere else because it is the only
+    # place that knows both numbers: a worker knows its lease but has no idea how long
+    # the run is, and the model knows the run but not what the fleet will be started
+    # with. A lease past the ceiling silently disables recovery — the run completes,
+    # reports success from the Job's point of view, and is one task short.
+    lease = int(os.environ.get("SUNLIT_LEASE_SECONDS", model.LEASE_SECONDS))
+    floor, ceiling = model.lease_bounds(args.workers, args.shards)
+    if lease >= ceiling:
+        warn(f"SUNLIT_LEASE_SECONDS={lease} is at or past the {ceiling}s ceiling for this "
+             f"shape (map phase {model.fmt(model.map_seconds(args.workers, args.shards))} "
+             f"minus the {model.REAPER_PERIOD_SECONDS}s reaper period). A dead worker "
+             f"would still hold its task when the queue drains, so the reaper could "
+             f"never return it in time. Recovery would be dead code.")
+    elif lease < floor:
+        warn(f"SUNLIT_LEASE_SECONDS={lease} is below the {floor}s floor "
+             f"({model.HEARTBEAT_SECONDS}s heartbeat x 3). A worker that merely stalls "
+             f"would be declared dead while still working, and its task done twice.")
+    else:
+        print(f"  lease             : {lease}s   (floor {floor}s, ceiling {ceiling}s; "
+              f"{100 * model.lease_coverage(lease, args.workers, args.shards):.0f}% of the "
+              f"map phase is recoverable)")
     print()
 
     coord = None

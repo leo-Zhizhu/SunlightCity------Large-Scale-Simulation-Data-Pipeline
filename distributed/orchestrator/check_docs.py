@@ -99,6 +99,14 @@ def facts() -> list[tuple[str, str, list[str]]]:
         ("socket share", "43%", [r"\b42%\s+of\s+(?:its|the)\b"]),
         ("affinity group size", f"{m.DAYS}",
          [r"twelve\s+dates\s+per\s+group", r"twelve\s+times\s+out\s+of\s+twelve"]),
+        # The lease bug: 900 s outlived the run, so recovery never fired. Both the old
+        # value and any lease past the ceiling are worth catching.
+        ("lease seconds", f"{model.LEASE_SECONDS}",
+         [r"SUNLIT_LEASE_SECONDS:\s*\"900\"", r"\b900\s*s\s+lease\b",
+          r"\b900\s*s\s+TTL\b", r"lease_seconds\s+INTEGER\s+DEFAULT\s+900"]),
+        ("heartbeat seconds", f"{model.HEARTBEAT_SECONDS}",
+         [r"heartbeat\s+every\s+15\s*s\b"]),
+        ("self-test assertions", "48", [r"\b45\s+assertions\b"]),
         ("deadline", "15 minutes",
          [r"\b11[-\s]minute\s+(?:target|deadline|budget)\b",
           r"\b12[-\s]minute\s+(?:runtime|target)\b"]),

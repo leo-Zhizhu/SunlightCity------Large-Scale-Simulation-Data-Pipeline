@@ -392,7 +392,7 @@ FROM meo_exposure_samples GROUP BY datetime ORDER BY datetime LIMIT 20;
 SELECT pg_current_wal_lsn();   -- delta across one task should be KB, not MB
 ```
 
-**And that the schema behaves as documented** — 45 assertions against a throwaway
+**And that the schema behaves as documented** — 48 assertions against a throwaway
 database:
 
 ```bash

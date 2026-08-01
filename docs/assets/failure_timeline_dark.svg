@@ -1,31 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="860" height="340" viewBox="0 0 860 340" role="img" aria-label="Timeline showing a worker killed mid-task. Its lease stops being renewed, expires, and the reaper returns the task to the queue where another worker claims and completes it. No coordinator is involved.">
-<rect width="860" height="340" fill="#1a1a19"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="452" viewBox="0 0 860 452" role="img" aria-label="Timeline showing a worker killed mid-task. Its 120-second lease stops being renewed, expires, and the reaper returns the task to the queue where another worker claims and completes it — a recovery window of about 180 seconds, well inside the 8m 14s map phase. No coordinator is involved.">
+<rect width="860" height="452" fill="#1a1a19"/>
 <text x="40.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="600" fill="#ffffff" text-anchor="start" style="font-variant-numeric:tabular-nums">How a dead worker recovers</text>
 <text x="40.0" y="55.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">An unrenewed lease IS the failure signal — no controller, no pod watch, no liveness probe.</text>
 <text x="820.0" y="34.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">ILLUSTRATIVE</text>
-<line x1="150.0" y1="96.0" x2="150.0" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="150.0" y1="96.0" x2="150.0" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="150.0" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">0m</text>
-<line x1="209.1" y1="96.0" x2="209.1" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="209.1" y1="96.0" x2="209.1" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="209.1" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">1m</text>
-<line x1="268.2" y1="96.0" x2="268.2" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="268.2" y1="96.0" x2="268.2" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="268.2" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">2m</text>
-<line x1="327.3" y1="96.0" x2="327.3" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="327.3" y1="96.0" x2="327.3" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="327.3" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">3m</text>
-<line x1="386.4" y1="96.0" x2="386.4" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="386.4" y1="96.0" x2="386.4" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="386.4" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">4m</text>
-<line x1="445.5" y1="96.0" x2="445.5" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="445.5" y1="96.0" x2="445.5" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="445.5" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">5m</text>
-<line x1="504.5" y1="96.0" x2="504.5" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="504.5" y1="96.0" x2="504.5" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="504.5" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">6m</text>
-<line x1="563.6" y1="96.0" x2="563.6" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="563.6" y1="96.0" x2="563.6" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="563.6" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">7m</text>
-<line x1="622.7" y1="96.0" x2="622.7" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="622.7" y1="96.0" x2="622.7" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="622.7" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">8m</text>
-<line x1="681.8" y1="96.0" x2="681.8" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="681.8" y1="96.0" x2="681.8" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="681.8" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">9m</text>
-<line x1="740.9" y1="96.0" x2="740.9" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="740.9" y1="96.0" x2="740.9" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="740.9" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">10m</text>
-<line x1="800.0" y1="96.0" x2="800.0" y2="264.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
+<line x1="800.0" y1="96.0" x2="800.0" y2="376.0" stroke="#2c2c2a" stroke-width="1" stroke-linecap="butt"/>
 <text x="800.0" y="88.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">11m</text>
 <text x="134.0" y="132.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="600" fill="#ffffff" text-anchor="end" style="font-variant-numeric:tabular-nums">worker-a7f3</text>
 <text x="134.0" y="146.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">pod on spot node</text>
@@ -36,33 +36,34 @@
 <text x="134.0" y="248.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11.5" font-weight="600" fill="#ffffff" text-anchor="end" style="font-variant-numeric:tabular-nums">worker-b21c</text>
 <text x="134.0" y="262.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="end" style="font-variant-numeric:tabular-nums">picks up the task</text>
 <line x1="150.0" y1="254.0" x2="800.0" y2="254.0" stroke="#383835" stroke-width="1" stroke-linecap="butt"/>
-<rect x="150.0" y="128.0" width="236.4" height="20.0" rx="4" fill="#5598e7"/>
-<text x="268.2" y="142.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">raycasting</text>
+<rect x="150.0" y="128.0" width="118.2" height="20.0" rx="4" fill="#5598e7"/>
+<text x="209.1" y="142.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">raycasting</text>
 <line x1="179.5" y1="130.0" x2="179.5" y2="146.0" stroke="#1a1a19" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
 <line x1="209.1" y1="130.0" x2="209.1" y2="146.0" stroke="#1a1a19" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
 <line x1="238.6" y1="130.0" x2="238.6" y2="146.0" stroke="#1a1a19" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
-<line x1="268.2" y1="130.0" x2="268.2" y2="146.0" stroke="#1a1a19" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
-<line x1="297.7" y1="130.0" x2="297.7" y2="146.0" stroke="#1a1a19" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
-<line x1="327.3" y1="130.0" x2="327.3" y2="146.0" stroke="#1a1a19" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
-<line x1="356.8" y1="130.0" x2="356.8" y2="146.0" stroke="#1a1a19" stroke-width="1" stroke-linecap="butt" opacity="0.5"/>
 <text x="150.0" y="118.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">| = heartbeat (30 s)</text>
-<line x1="386.4" y1="114.0" x2="386.4" y2="156.0" stroke="#e66767" stroke-width="2" stroke-linecap="butt"/>
-<text x="394.4" y="124.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">SIGKILL</text>
-<text x="394.4" y="138.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">spot reclaim / OOM / node loss</text>
-<rect x="150.0" y="186.0" width="236.4" height="20.0" rx="4" fill="#1c5cab"/>
-<text x="268.2" y="200.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">leased, renewed</text>
-<rect x="386.4" y="186.0" width="147.7" height="20.0" rx="4" fill="#242422" stroke="#e66767" stroke-width="1.5"/>
-<text x="460.2" y="200.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#e66767" text-anchor="middle" style="font-variant-numeric:tabular-nums">not renewed</text>
-<line x1="534.1" y1="172.0" x2="534.1" y2="214.0" stroke="#f0803c" stroke-width="2" stroke-linecap="butt" stroke-dasharray="4 3"/>
-<text x="542.1" y="182.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#f0803c" text-anchor="start" style="font-variant-numeric:tabular-nums">lease expires</text>
-<rect x="534.1" y="186.0" width="21.7" height="20.0" rx="3" fill="#f0803c"/>
-<text x="561.8" y="200.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#f0803c" text-anchor="start" style="font-variant-numeric:tabular-nums">back to pending</text>
-<rect x="567.6" y="244.0" width="222.6" height="20.0" rx="4" fill="#5598e7"/>
-<text x="678.9" y="258.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">re-claims · redoes · completes</text>
+<line x1="268.2" y1="114.0" x2="268.2" y2="156.0" stroke="#e66767" stroke-width="2" stroke-linecap="butt"/>
+<text x="276.2" y="124.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#e66767" text-anchor="start" style="font-variant-numeric:tabular-nums">SIGKILL</text>
+<text x="276.2" y="138.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">spot reclaim / OOM / node loss</text>
+<rect x="150.0" y="186.0" width="118.2" height="20.0" rx="4" fill="#1c5cab"/>
+<text x="209.1" y="200.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="400" fill="#ffffff" text-anchor="middle" style="font-variant-numeric:tabular-nums">leased, renewed</text>
+<rect x="268.2" y="186.0" width="118.2" height="20.0" rx="4" fill="#242422" stroke="#e66767" stroke-width="1.5"/>
+<text x="327.3" y="200.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#e66767" text-anchor="middle" style="font-variant-numeric:tabular-nums">not renewed (120 s)</text>
+<line x1="386.4" y1="172.0" x2="386.4" y2="214.0" stroke="#f0803c" stroke-width="2" stroke-linecap="butt" stroke-dasharray="4 3"/>
+<text x="394.4" y="182.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10.5" font-weight="700" fill="#f0803c" text-anchor="start" style="font-variant-numeric:tabular-nums">lease expires</text>
+<rect x="386.4" y="186.0" width="59.1" height="20.0" rx="3" fill="#f0803c"/>
+<text x="451.5" y="200.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="600" fill="#f0803c" text-anchor="start" style="font-variant-numeric:tabular-nums">reaper: back to pending</text>
+<rect x="457.3" y="244.0" width="332.9" height="20.0" rx="4" fill="#5598e7"/>
+<text x="623.7" y="258.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#0b0b0b" text-anchor="middle" style="font-variant-numeric:tabular-nums">re-claims · redoes · completes</text>
 <circle cx="796.1" cy="254.0" r="5.5" fill="#0ca30c"/>
-<line x1="386.4" y1="292.0" x2="563.6" y2="292.0" stroke="#f0803c" stroke-width="1.5" stroke-linecap="butt"/>
-<line x1="386.4" y1="288.0" x2="386.4" y2="296.0" stroke="#f0803c" stroke-width="1.5" stroke-linecap="butt"/>
-<line x1="563.6" y1="288.0" x2="563.6" y2="296.0" stroke="#f0803c" stroke-width="1.5" stroke-linecap="butt"/>
-<text x="475.0" y="284.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#f0803c" text-anchor="middle" style="font-variant-numeric:tabular-nums">recovery window = lease TTL</text>
-<text x="475.0" y="308.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">on graceful SIGTERM the lease is released immediately instead</text>
+<line x1="268.2" y1="292.0" x2="445.5" y2="292.0" stroke="#f0803c" stroke-width="1.5" stroke-linecap="butt"/>
+<line x1="268.2" y1="288.0" x2="268.2" y2="296.0" stroke="#f0803c" stroke-width="1.5" stroke-linecap="butt"/>
+<line x1="445.5" y1="288.0" x2="445.5" y2="296.0" stroke="#f0803c" stroke-width="1.5" stroke-linecap="butt"/>
+<text x="356.8" y="284.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="10" font-weight="600" fill="#f0803c" text-anchor="middle" style="font-variant-numeric:tabular-nums">recovery window 180 s = 120 s lease + 60 s reaper sweep</text>
+<text x="356.8" y="308.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="9.5" font-weight="400" fill="#898781" text-anchor="middle" style="font-variant-numeric:tabular-nums">on graceful SIGTERM the lease is released immediately instead</text>
+<rect x="40.0" y="346.0" width="780.0" height="88.0" rx="6" fill="#242422"/>
+<text x="56.0" y="371.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">The lease has to be shorter than the run or this never happens. At 120 s the worst case is 180 s — lease plus one 60 s reaper period —</text>
+<text x="56.0" y="386.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">so a death anywhere in the first 63% of the map phase is fully absorbed. The ceiling is 433 s: at or past it the lease outlives the</text>
+<text x="56.0" y="401.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">queue, a dead worker still holds its task when everyone else goes home, and the run finishes one task short with the Job reporting</text>
+<text x="56.0" y="416.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">success. model.lease_bounds() states both bounds; plan_tasks.py refuses a run outside them.</text>
 </svg>

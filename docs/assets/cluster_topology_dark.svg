@@ -14,7 +14,7 @@
 <text x="52.0" y="155.5" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.8" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums">headless Unity, IL2CPP</text>
 <text x="52.0" y="168.0" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="8.8" font-weight="400" fill="#c3c2b7" text-anchor="start" style="font-variant-numeric:tabular-nums"></text>
 <text x="52.0" y="180.5" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.8" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">claim a task</text>
-<text x="52.0" y="193.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.8" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">heartbeat every 15 s</text>
+<text x="52.0" y="193.0" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.8" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">heartbeat every 30 s</text>
 <text x="52.0" y="205.5" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="8.8" font-weight="400" fill="#898781" text-anchor="start" style="font-variant-numeric:tabular-nums">report completion</text>
 <rect x="232.0" y="118.0" width="150.0" height="92.0" rx="6" fill="#1a1a19" stroke="#383835" stroke-width="1"/>
 <rect x="232.0" y="118.0" width="3.0" height="92.0" rx="1.5" fill="#5598e7"/>

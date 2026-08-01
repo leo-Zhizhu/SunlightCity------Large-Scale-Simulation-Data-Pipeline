@@ -75,7 +75,7 @@ namespace SunlightCity.Distributed
         /// Set by SIGTERM handling. Kubernetes sends SIGTERM then waits
         /// terminationGracePeriodSeconds before SIGKILL; we use that window to finish
         /// the current timestep, drain the writer, and release leases cleanly so
-        /// tasks are immediately reclaimable rather than waiting out a 900 s lease.
+        /// tasks are immediately reclaimable rather than waiting out a 120 s lease.
         /// </summary>
         private volatile bool _shutdownRequested;
 
@@ -507,7 +507,7 @@ namespace SunlightCity.Distributed
         /// Kubernetes sends SIGTERM on scale-down, eviction and spot reclamation.
         /// Unity surfaces it as OnApplicationQuit. We flag it and let the loop unwind
         /// so leases are released promptly, instead of tasks sitting unclaimable
-        /// until a 900 s lease expires.
+        /// until a 120 s lease expires.
         /// </summary>
         private void OnApplicationQuit()
         {

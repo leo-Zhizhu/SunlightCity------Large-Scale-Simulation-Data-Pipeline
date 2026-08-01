@@ -233,7 +233,7 @@ $$ LANGUAGE sql STABLE STRICT;
 CREATE OR REPLACE FUNCTION meo_claim_task(
     p_run_id         TEXT,
     p_worker_id      TEXT,
-    p_lease_seconds  INTEGER DEFAULT 900,
+    p_lease_seconds  INTEGER DEFAULT 120,   -- see 10-config.yaml: floor 90, ceiling 433
     p_prefer_section INTEGER DEFAULT NULL,
     p_prefer_window  INTEGER DEFAULT NULL
 )
@@ -330,7 +330,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION meo_heartbeat(
     p_task_id       BIGINT,
     p_worker_id     TEXT,
-    p_lease_seconds INTEGER DEFAULT 900,
+    p_lease_seconds INTEGER DEFAULT 120,    -- see 10-config.yaml: floor 90, ceiling 433
     p_raycasts_done BIGINT  DEFAULT NULL
 )
 RETURNS BOOLEAN AS $$

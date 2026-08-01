@@ -53,10 +53,23 @@ namespace SunlightCity.Distributed
 
         // ---- Queue behaviour ------------------------------------------------
         /// <summary>
-        /// Lease duration. Must exceed the worst-case time to process one task, or a
-        /// healthy worker's lease expires mid-task and its work is duplicated. The
-        /// heartbeat is what actually keeps it alive; this is the grace period after
-        /// a worker goes silent.
+        /// Lease duration: the grace period after a worker goes silent before its task
+        /// is handed to somebody else. The heartbeat is what actually keeps it alive.
+        ///
+        /// TWO BOUNDS, and the second is easy to miss because it is not local to this
+        /// worker at all:
+        ///
+        ///   FLOOR   several heartbeat intervals, or a merely-slow worker is declared
+        ///           dead while still working and its task is done twice. Checked
+        ///           below.
+        ///   CEILING shorter than the RUN, or the lease outlives the queue and a dead
+        ///           worker is still holding its task when everyone else goes home —
+        ///           the recovery path never fires at all. This one cannot be checked
+        ///           here (a worker has no idea how long the run is); plan_tasks.py
+        ///           checks it against model.lease_bounds() before the fleet starts.
+        ///
+        /// It was 900 s, which satisfied the floor by a factor of a thousand and
+        /// exceeded the ceiling by a factor of eight.
         /// </summary>
         public int LeaseSeconds { get; private set; }
 
@@ -212,7 +225,7 @@ namespace SunlightCity.Distributed
                 DbUser     = Env("SUNLIT_DB_USER", "admin"),
                 DbPassword = Env("SUNLIT_DB_PASSWORD", ""),
 
-                LeaseSeconds          = EnvInt("SUNLIT_LEASE_SECONDS", 900),
+                LeaseSeconds          = EnvInt("SUNLIT_LEASE_SECONDS", 120),
                 HeartbeatSeconds      = EnvInt("SUNLIT_HEARTBEAT_SECONDS", 30),
                 EmptyQueuePollSeconds = EnvInt("SUNLIT_EMPTY_POLL_SECONDS", 10),
                 MaxEmptyPolls         = EnvInt("SUNLIT_MAX_EMPTY_POLLS", 12),
@@ -258,13 +271,24 @@ namespace SunlightCity.Distributed
             if (string.IsNullOrWhiteSpace(WorkerId))
                 errors.AppendLine("  SUNLIT_WORKER_ID resolved empty.");
 
-            // A heartbeat that cannot complete several times inside the lease window
-            // makes lease expiry a matter of luck rather than of actual failure.
+            // FLOOR. A heartbeat that cannot complete several times inside the lease
+            // window makes lease expiry a matter of luck rather than of actual failure.
             if (HeartbeatSeconds * 3 > LeaseSeconds)
                 errors.AppendLine(
                     $"  SUNLIT_HEARTBEAT_SECONDS ({HeartbeatSeconds}) must be < 1/3 of " +
                     $"SUNLIT_LEASE_SECONDS ({LeaseSeconds}), so a transient DB stall does " +
                     "not cost a healthy worker its lease.");
+
+            // CEILING, as far as a worker can see it. The real bound is the run length
+            // and only the planner knows that, but a lease of many minutes is wrong
+            // under every plausible run and is worth catching here too — a worker that
+            // starts with one has already made the recovery path dead code.
+            if (LeaseSeconds > 600)
+                errors.AppendLine(
+                    $"  SUNLIT_LEASE_SECONDS ({LeaseSeconds}) is longer than any run this " +
+                    "pipeline is sized for. A dead worker would still hold its task when " +
+                    "the queue drains, so the reaper could never return it in time and " +
+                    "the run would finish one task short. See model.lease_bounds().");
 
             if (SunAngleThreshold <= 0f || SunAngleThreshold > 45f)
                 errors.AppendLine(

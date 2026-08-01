@@ -135,10 +135,10 @@ multiply it. Neither half alone gets close.
 
 **Nine is derived, not maximal.** The bare minimum for this fleet is seven; nine gives
 **+35% ingest headroom**, so a checkpoint or an autovacuum on one instance cannot stall
-the fleet. Twenty would buy nine seconds for double the database spend.
+the fleet. Twenty would buy 55 seconds for more than double the database spend.
 
-**Past ~25 it gets worse.** Fifty workers cannot offer enough concurrent streams to
-keep that many instances busy, so each one starves. More hardware is not monotonically
+**Past ~27 it gets worse.** 54 workers cannot offer enough concurrent streams to keep
+that many instances busy, so each one starves. More hardware is not monotonically
 better, and the model says where the turn is.
 
 Everything above is `python distributed/orchestrator/model.py --sweep`. The model is
@@ -331,15 +331,43 @@ All eight of those semantics are asserted in
 
 ## 7. Failure handling
 
-Tasks are **leased**, not dequeued. A worker renews by heartbeat every 30 s against a
-900 s TTL.
+Tasks are **leased**, not dequeued. A worker stamps its task *"mine until now + 120 s"*
+and re-stamps it every 30 s. Stop re-stamping and the lease lapses; the next reaper sweep
+returns the task to the queue.
 
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/failure_timeline_dark.svg">
-  <img src="assets/failure_timeline_light.svg" alt="Timeline of a worker killed mid-task, its lease expiring, and another worker reclaiming and completing the task" width="850">
+  <img src="assets/failure_timeline_light.svg" alt="Timeline of a worker killed mid-task: a 120 second lease stops being renewed, expires, and a reaper sweep within 60 seconds returns the task to the queue, where another worker reclaims and completes it. A 180 second recovery window inside an 8 minute 14 second map phase." width="850">
 </picture>
 </div>
+
+### Sizing the lease — it has two bounds, and only one is local
+
+| | bound | what happens outside it |
+|---|---:|---|
+| **floor** | 90 s (3 × heartbeat) | a worker that is merely slow — a database stall, a GC pause — is declared dead while still working, and two workers do the same task |
+| **ceiling** | 433 s (map phase − reaper period) | the lease outlives the run. A dead worker is still holding its task when the queue drains, the survivors exit on empty polls, the Job reports Complete, and the run is one task short |
+
+**120 s** sits between them: four missed heartbeats before death is declared, a
+**180-second** worst-case recovery (lease + one sweep), and a death anywhere in the first
+**63%** of the map phase is fully absorbed.
+
+> **This was 900 s, and the ceiling is why that was a bug.** 900 s clears the floor by a
+> factor of a thousand — which is the only bound the original reasoning considered — and
+> exceeds the ceiling by a factor of eight. The recovery path could therefore never fire
+> inside a run. Nothing shipped wrong, because `reduce_finalize`'s completeness check
+> catches the gap and exits 2, but "the fleet absorbs a dead worker" had quietly become
+> "re-run the whole thing".
+>
+> The ceiling is not local to a worker — a worker knows its lease but has no idea how long
+> the run is — which is why nothing caught it. `model.lease_bounds()` states both bounds,
+> `plan_tasks.py` refuses a run outside them, and `queue_selftest.sql` asserts the SQL
+> default clears the floor and is far below any plausible run.
+
+A death in the last 180 s of the map phase cannot be absorbed by *any* lease length. That
+is a property of the problem rather than of the setting, and it is precisely why the
+completeness check at the end of the reduce phase exists.
 
 **An unrenewed lease IS the failure signal.** There is no coordinator to detect the
 death and no cleanup path to get wrong. That is not merely less code — it is strictly
@@ -478,7 +506,7 @@ sustained bulk byte stream, where it would be a single-threaded proxy relaying
 
 The schema and queue semantics are asserted against a real PostgreSQL 16 + PostGIS 3.4,
 not argued for in prose. `distributed/db/tests/run_selftest.sh` builds a throwaway
-database, applies the schema, and runs **45 assertions**:
+database, applies the schema, and runs **48 assertions**:
 
 | | |
 |---|---|

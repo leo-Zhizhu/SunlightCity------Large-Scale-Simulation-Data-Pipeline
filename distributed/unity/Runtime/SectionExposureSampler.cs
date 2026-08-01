@@ -38,7 +38,7 @@ namespace SunlightCity.Distributed
     /// raycasting — which matters more than the allocation cost itself. A
     /// generation-0 collection mid-window would stall the job system's worker
     /// threads together, and the resulting pause would show up as a heartbeat gap
-    /// on a 900 s lease. <see cref="AssertNoGarbageCollected"/> makes the claim
+    /// on a 120 s lease. <see cref="AssertNoGarbageCollected"/> makes the claim
     /// checkable rather than aspirational: it compares GC.CollectionCount before
     /// and after a window and logs if anything moved.
     ///

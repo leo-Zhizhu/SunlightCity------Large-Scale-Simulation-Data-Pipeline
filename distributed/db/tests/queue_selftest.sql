@@ -251,7 +251,36 @@ BEGIN
 END $$;
 
 
-\echo '--- 9. progress views ----------------------------------------------------'
+\echo '--- 9. the lease default is inside its bounds -----------------------------'
+-- The bound nobody wrote down. A lease longer than the run means a dead worker is
+-- still holding its task when the queue drains: survivors exit on empty polls, the
+-- Job reports Complete, and the run is one task short. The previous 900 s default was
+-- 8x past the ceiling, so this path was dead code and no test noticed.
+--
+-- The exact ceiling depends on the run (model.lease_bounds()), which SQL cannot see.
+-- What SQL CAN assert is the shape: the default must clear 3 heartbeats and must be
+-- far below any plausible run length. plan_tasks.py does the exact check at plan time.
+DO $$
+DECLARE
+    v_default INTEGER;
+    v_heartbeat CONSTANT INTEGER := 30;     -- SUNLIT_HEARTBEAT_SECONDS
+BEGIN
+    SELECT pg_get_function_arg_default(p.oid, 3)::INTEGER INTO v_default
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE p.proname = 'meo_claim_task' AND n.nspname = current_schema();
+
+    PERFORM _t('meo_claim_task has a lease default at all', v_default IS NOT NULL);
+    PERFORM _t('lease default clears the floor (3 x heartbeat)',
+        v_default >= 3 * v_heartbeat,
+        v_default || 's vs floor ' || (3 * v_heartbeat) || 's');
+    PERFORM _t('lease default is far below any plausible run length',
+        v_default <= 600,
+        v_default || 's -- a lease past the run makes the reaper unable to fire in time');
+END $$;
+
+
+\echo '--- 10. progress views ---------------------------------------------------'
 UPDATE meo_shards SET state = 'online' WHERE shard_index BETWEEN 90 AND 92;
 SELECT tasks_total, tasks_done, tasks_running, tasks_failed, pct_affinity_hit
 FROM meo_run_progress WHERE run_id = 'qtest';

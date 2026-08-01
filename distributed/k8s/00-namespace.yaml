@@ -63,7 +63,7 @@ spec:
 #
 # Without this, a container with no memory request is scheduled as "best effort" and
 # is the FIRST thing the kubelet kills under node pressure. For a worker holding a
-# 900 s lease, that is an expensive way to discover a missing field.
+# 120 s lease, that is an expensive way to discover a missing field.
 #
 #
 # MEMORY ONLY. CPU IS DELIBERATELY ABSENT, AND THIS IS NOT AN OVERSIGHT.
