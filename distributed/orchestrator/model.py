@@ -334,6 +334,84 @@ ANALYZE_SECONDS        = 30           # 3,360 leaves per shard via vacuumdb --an
 FLEET_STARTUP_SECONDS = 45
 
 # ===========================================================================
+# FAILURE RECOVERY — the lease, and the two bounds on it
+#
+# A worker claims a task by stamping it "mine until now() + LEASE_SECONDS", and
+# re-stamps it every HEARTBEAT_SECONDS while it is alive. If it dies, nobody
+# re-stamps; the lease lapses; a reaper sweep returns the task to the queue. An
+# unrenewed lease IS the failure signal — there is no pod watch and no controller.
+#
+# The lease length has TWO bounds, and only the first was ever written down:
+#
+#   FLOOR — it must exceed several heartbeat intervals, or a worker that is merely
+#     slow (a database stall, a GC pause) is declared dead while still working and
+#     its task gets handed to somebody else. Two workers then do the same task.
+#
+#   CEILING — it must be comfortably SHORTER THAN THE RUN. This is the one that was
+#     missing. At the previous 900 s, the lease outlived the entire 669 s run: a
+#     worker that died at any point was still holding its task when the queue
+#     drained, the surviving workers exited on empty polls, and the run finished one
+#     task short. Not silent — reduce_finalize's completeness check catches the gap
+#     and exits 2 — but the automatic recovery never fired, turning "the fleet
+#     absorbed a dead worker" into "re-run the whole thing".
+#
+# 900 s was chosen against the floor alone, where it is a thousand times more
+# patience than a ~0.9 s task needs. Nothing checked it against the ceiling, so a
+# value 1.4x the run length read as merely generous. lease_bounds() now states both
+# and report() asserts the chosen value sits between them.
+#
+# REAPER_PERIOD_SECONDS is 60 because that is Kubernetes' CronJob granularity; it
+# cannot usefully be shorter without a long-running controller, which is exactly the
+# component this design exists to avoid.
+# ===========================================================================
+HEARTBEAT_SECONDS     = 30
+LEASE_SECONDS         = 120    # 4 missed heartbeats to be declared dead
+REAPER_PERIOD_SECONDS = 60
+
+
+def recovery_seconds(lease: int = None) -> float:
+    """
+    Worst case from a worker dying to its task being claimable again: the lease has
+    to lapse, and then the next reaper sweep has to come round.
+    """
+    return (LEASE_SECONDS if lease is None else lease) + REAPER_PERIOD_SECONDS
+
+
+def lease_bounds(workers: int = None, shards: int = None) -> tuple[int, int]:
+    """
+    (floor, ceiling) for LEASE_SECONDS, in seconds. Both are hard: outside them the
+    mechanism is not slow, it is broken.
+
+    floor    3 heartbeat intervals. Below it a worker that is merely slow gets
+             declared dead while still working, and two workers do the same task.
+
+    ceiling  map_seconds - REAPER_PERIOD. At or above this, a death at ANY point in
+             the run is still holding its task when the map phase ends, so the
+             reaper can never return it in time and the recovery path is dead code.
+             This is the bound nobody wrote down, and 900 s was 8x past it.
+
+    Between the two it is a smooth trade rather than a second threshold, so
+    lease_coverage() reports what a given choice actually buys instead of pretending
+    there is a crisp answer.
+    """
+    m = map_seconds(workers or WORKERS, shards or SHARDS)
+    return 3 * HEARTBEAT_SECONDS, int(m - REAPER_PERIOD_SECONDS)
+
+
+def lease_coverage(lease: int = None, workers: int = None, shards: int = None) -> float:
+    """
+    Fraction of the map phase during which a worker death is fully ABSORBED — i.e.
+    detected, requeued and redone before the queue drains.
+
+    A death in the last recovery_seconds() of the map phase cannot be absorbed by any
+    lease length, so this never reaches 1.0. That is a property of the problem, not
+    of the setting: it is why the completeness check at the end of reduce exists.
+    """
+    m = map_seconds(workers or WORKERS, shards or SHARDS)
+    redo = rows_per_task() / WORKER_ROW_RATE
+    return max(0.0, (m - recovery_seconds(lease) - redo) / m)
+
+# ===========================================================================
 # THE DESIGN REQUIREMENT
 #
 # This is the input. Everything in DEPLOYMENT SHAPE below is derived from it.
@@ -888,6 +966,27 @@ def report() -> None:
               f"{100 * (1 - v / TARGET_SECONDS):>+5.1f}%  "
               f"{'OVER' if v > TARGET_SECONDS else 'ok'}")
     print(f"    derived by      python model.py --derive")
+
+    # Failure recovery, printed here because its correctness depends on the runtime
+    # directly above it -- which is exactly the coupling that was missed.
+    lo, hi = lease_bounds()
+    ok = lo <= LEASE_SECONDS < hi
+    print(f"\n  FAILURE RECOVERY")
+    print(f"    heartbeat                        {HEARTBEAT_SECONDS:>4} s")
+    print(f"    lease                            {LEASE_SECONDS:>4} s   "
+          f"{LEASE_SECONDS // HEARTBEAT_SECONDS} missed heartbeats to be declared dead")
+    print(f"    reaper period                    {REAPER_PERIOD_SECONDS:>4} s   "
+          f"Kubernetes CronJob granularity")
+    print(f"    worst-case recovery              {recovery_seconds():>4.0f} s   "
+          f"lease + one sweep")
+    print(f"    lease bounds                {lo:>4} .. {hi:<4} s   "
+          f"{'OK' if ok else '*** OUT OF RANGE ***'}")
+    print(f"      floor   {lo} s = 3 x heartbeat; below it a slow worker is reaped alive")
+    print(f"      ceiling {hi} s = map - reaper; at or past it the lease outlives the")
+    print(f"              run and the recovery path is dead code")
+    print(f"    map phase absorbing a death   {100 * lease_coverage():>6.0f}%   "
+          f"a death later than that is caught by")
+    print(f"                                              the completeness check, not the reaper")
     print(bar)
 
 

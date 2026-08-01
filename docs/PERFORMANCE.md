@@ -855,5 +855,5 @@ python distributed/orchestrator/check_docs.py -v    # list the 18 quantities che
 Finally, to confirm the schema behaves as described, against a real PostgreSQL:
 
 ```bash
-distributed/db/tests/run_selftest.sh        # 45 assertions
+distributed/db/tests/run_selftest.sh        # 48 assertions
 ```

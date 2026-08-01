@@ -182,7 +182,7 @@ and Unity logs a leak warning past that. These outlive thousands of frames by de
 
 **What matters more than the allocation cost is that the GC never runs during
 raycasting.** A generation-0 collection mid-window would stall the job system's worker
-threads together, and the resulting pause shows up as a heartbeat gap on a 900 s lease —
+threads together, and the resulting pause shows up as a heartbeat gap on a 120 s lease —
 so the symptom is "unexplained lease loss", not "memory pressure".
 
 v1 allocated, per timestep, a `List<Tuple<Guid, string, bool>>` plus an interpolated

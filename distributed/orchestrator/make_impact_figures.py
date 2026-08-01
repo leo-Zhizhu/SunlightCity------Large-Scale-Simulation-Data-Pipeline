@@ -1223,11 +1223,13 @@ def fig_v1_phases(theme: str) -> str:
 
 def fig_failure(theme: str) -> str:
     t = THEMES[theme]
-    W, H = 860, 340
+    W, H = 860, 452
     s = SVG(W, H, t,
-            "Timeline showing a worker killed mid-task. Its lease stops being renewed, "
-            "expires, and the reaper returns the task to the queue where another worker "
-            "claims and completes it. No coordinator is involved.")
+            f"Timeline showing a worker killed mid-task. Its {model.LEASE_SECONDS}-second "
+            f"lease stops being renewed, expires, and the reaper returns the task to the "
+            f"queue where another worker claims and completes it — a recovery window of "
+            f"about {model.recovery_seconds():.0f} seconds, well inside the "
+            f"{fmt_t(model.map_seconds())} map phase. No coordinator is involved.")
 
     s.text(40, 34, "How a dead worker recovers", 16, t["ink"], weight="600")
     s.text(40, 55, "An unrenewed lease IS the failure signal — no controller, no pod watch, "
@@ -1235,6 +1237,13 @@ def fig_failure(theme: str) -> str:
     s.text(W - 40, 34, "ILLUSTRATIVE", 9.5, t["muted"], anchor="end", weight="600")
 
     px, pw = 150, W - 150 - 60
+    # Every instant below comes from the model, so the figure cannot drift from the
+    # deployed lease again.
+    KILL = 120.0
+    HB = float(model.HEARTBEAT_SECONDS)
+    EXPIRE = KILL + model.LEASE_SECONDS                 # lease lapses
+    REQUEUE = EXPIRE + model.REAPER_PERIOD_SECONDS      # worst case: a whole sweep
+    RECLAIM = REQUEUE + 12.0
     T = 660.0                      # seconds of timeline
     def sx(sec): return px + pw * (sec / T)
 
@@ -1259,51 +1268,68 @@ def fig_failure(theme: str) -> str:
 
     # --- worker A: works, then is killed at t=240 ---
     ya = 128
-    s.rect(sx(0), ya, sx(240) - sx(0), bh, t["v2"], rx=4)
+    s.rect(sx(0), ya, sx(KILL) - sx(0), bh, t["v2"], rx=4)
     # Short label: the bar is only ~230 px wide, and the fuller wording overflowed it.
-    s.text(sx(120), ya + 14, "raycasting", 10, t["on_v2"], anchor="middle", weight="600")
+    s.text(sx(KILL / 2), ya + 14, "raycasting", 10, t["on_v2"], anchor="middle", weight="600")
     # heartbeat ticks — the visual rhythm carries "every 30 s" without the words
-    for sec in range(30, 240, 30):
+    for sec in range(int(HB), int(KILL), int(HB)):
         s.line(sx(sec), ya + 2, sx(sec), ya + bh - 2, t["surface"], 1, opacity=0.5)
-    s.text(sx(0), ya - 10, "| = heartbeat (30 s)", 9, t["muted"])
+    s.text(sx(0), ya - 10, f"| = heartbeat ({model.HEARTBEAT_SECONDS} s)", 9, t["muted"])
     # kill
-    s.line(sx(240), ya - 14, sx(240), ya + bh + 8, t["bad"], 2)
-    s.text(sx(240) + 8, ya - 4, "SIGKILL", 10.5, t["bad"], weight="700")
-    s.text(sx(240) + 8, ya + 10, "spot reclaim / OOM / node loss", 9.5, t["muted"])
+    s.line(sx(KILL), ya - 14, sx(KILL), ya + bh + 8, t["bad"], 2)
+    s.text(sx(KILL) + 8, ya - 4, "SIGKILL", 10.5, t["bad"], weight="700")
+    s.text(sx(KILL) + 8, ya + 10, "spot reclaim / OOM / node loss", 9.5, t["muted"])
 
     # --- lease lane ---
     yl = 186
-    s.rect(sx(0), yl, sx(240) - sx(0), bh, t["v2_light"], rx=4)
-    s.text(sx(120), yl + 14, "leased, renewed", 10, t["ink"], anchor="middle")
+    s.rect(sx(0), yl, sx(KILL) - sx(0), bh, t["v2_light"], rx=4)
+    s.text(sx(KILL / 2), yl + 14, "leased, renewed", 10, t["ink"], anchor="middle")
     # dead window
-    s.rect(sx(240), yl, sx(390) - sx(240), bh, t["panel"], rx=4,
+    s.rect(sx(KILL), yl, sx(EXPIRE) - sx(KILL), bh, t["panel"], rx=4,
            stroke=t["bad"], sw=1.5)
-    s.text(sx(315), yl + 14, "not renewed", 10, t["bad"], anchor="middle", weight="600")
-    s.line(sx(390), yl - 14, sx(390), yl + bh + 8, t["accent"], 2, dash="4 3")
-    s.text(sx(390) + 8, yl - 4, "lease expires", 10.5, t["accent"], weight="700")
+    s.text(sx((KILL + EXPIRE) / 2), yl + 14,
+           f"not renewed ({model.LEASE_SECONDS} s)", 10, t["bad"], anchor="middle",
+           weight="600")
+    s.line(sx(EXPIRE), yl - 14, sx(EXPIRE), yl + bh + 8, t["accent"], 2, dash="4 3")
+    s.text(sx(EXPIRE) + 8, yl - 4, "lease expires", 10.5, t["accent"], weight="700")
     # The requeue is a near-instant event, so it gets a narrow marker with the
     # label placed OUTSIDE it — the previous inline text overflowed a 30 px box.
-    s.rect(sx(390), yl, sx(412) - sx(390), bh, t["accent"], rx=3)
-    s.text(sx(412) + 6, yl + 14, "back to pending", 9.5, t["accent"], weight="600")
+    s.rect(sx(EXPIRE), yl, sx(REQUEUE) - sx(EXPIRE), bh, t["accent"], rx=3)
+    s.text(sx(REQUEUE) + 6, yl + 14, "reaper: back to pending", 9.5, t["accent"],
+           weight="600")
 
     # --- worker B ---
     yb = 244
-    s.rect(sx(424), yb, sx(650) - sx(424), bh, t["v2"], rx=4)
-    s.text(sx(537), yb + 14, "re-claims · redoes · completes", 10, t["on_v2"],
-           anchor="middle", weight="600")
+    s.rect(sx(RECLAIM), yb, sx(650) - sx(RECLAIM), bh, t["v2"], rx=4)
+    s.text(sx((RECLAIM + 650) / 2), yb + 14, "re-claims · redoes · completes", 10,
+           t["on_v2"], anchor="middle", weight="600")
     s.circle(sx(656), yb + 10, 5.5, t["good"])
 
     # annotation bracket for the recovery window
     by = 292
-    s.line(sx(240), by, sx(420), by, t["accent"], 1.5)
-    s.line(sx(240), by - 4, sx(240), by + 4, t["accent"], 1.5)
-    s.line(sx(420), by - 4, sx(420), by + 4, t["accent"], 1.5)
-    s.text(sx(330), by - 8, "recovery window = lease TTL", 10, t["accent"],
+    s.line(sx(KILL), by, sx(REQUEUE), by, t["accent"], 1.5)
+    s.line(sx(KILL), by - 4, sx(KILL), by + 4, t["accent"], 1.5)
+    s.line(sx(REQUEUE), by - 4, sx(REQUEUE), by + 4, t["accent"], 1.5)
+    mid = sx((KILL + REQUEUE) / 2)
+    s.text(mid, by - 8,
+           f"recovery window {REQUEUE - KILL:.0f} s = {model.LEASE_SECONDS} s lease "
+           f"+ {model.REAPER_PERIOD_SECONDS} s reaper sweep", 10, t["accent"],
            anchor="middle", weight="600")
-    s.text(sx(330), by + 16,
+    s.text(mid, by + 16,
            "on graceful SIGTERM the lease is released immediately instead",
            9.5, t["muted"], anchor="middle")
 
+    s.footer(
+        f"The lease has to be shorter than the run or this never happens. At "
+        f"{model.LEASE_SECONDS} s the worst case is "
+        f"{model.recovery_seconds():.0f} s — lease plus one {model.REAPER_PERIOD_SECONDS} s "
+        f"reaper period — so a death anywhere in the first "
+        f"{100 * model.lease_coverage():.0f}% of the map phase is fully absorbed. The "
+        f"ceiling is {model.lease_bounds()[1]} s: at or past it the lease outlives the "
+        f"queue, a dead worker still holds its task when everyone else goes home, and "
+        f"the run finishes one task short with the Job reporting success. "
+        f"model.lease_bounds() states both bounds; plan_tasks.py refuses a run outside "
+        f"them.")
     return s.done()
 
 
@@ -1867,7 +1893,7 @@ def fig_cluster_topology(theme: str) -> str:
           "headless Unity, IL2CPP",
           "",
           "claim a task",
-          "heartbeat every 15 s",
+          f"heartbeat every {model.HEARTBEAT_SECONDS} s",
           "report completion"], t["v2"], mono_from=3)
 
     card(MID_X, CTRL_Y + 26, MID_W, 92, "POOLER", "PgBouncer",

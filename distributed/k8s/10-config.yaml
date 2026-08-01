@@ -47,13 +47,30 @@ data:
   SUNLIT_DB_USER: "admin"
 
   # ---- Lease / heartbeat ---------------------------------------------------
-  # The lease must exceed the worst-case single-task duration or a healthy worker
-  # loses its lease mid-task and the work is done twice. A section-window is ~0.9 s
-  # of raycasting plus a flush; 900 s is enormous headroom, and headroom is free here
-  # because the reaper only acts on tasks that have genuinely stopped reporting.
-  SUNLIT_LEASE_SECONDS: "900"
-  # Renewed 30x per lease window, so ~29 consecutive heartbeat failures are needed
-  # before a live worker is declared dead.
+  # A worker stamps its task "mine until now + LEASE_SECONDS" and re-stamps every
+  # HEARTBEAT_SECONDS. Stop re-stamping and the lease lapses; the reaper returns the
+  # task to the queue. THE LEASE HAS TWO BOUNDS AND BOTH MATTER:
+  #
+  #   FLOOR    >= 3 x heartbeat (90 s). Below it a worker that is merely slow — a
+  #            database stall, a GC pause — is declared dead while still working, and
+  #            two workers do the same task.
+  #
+  #   CEILING  < map phase - reaper period (433 s). AT OR ABOVE IT THE WHOLE RECOVERY
+  #            PATH IS DEAD CODE: the lease outlives the run, so a dead worker is
+  #            still holding its task when the queue drains. The survivors exit on
+  #            empty polls, the Job reports Complete, and the run is one task short.
+  #
+  # This was 900 s, chosen against the floor alone — where it is a thousand times more
+  # patience than a ~0.9 s task needs. It is 8x past the ceiling. A worker death was
+  # therefore never recovered inside a run: reduce_finalize's completeness check
+  # caught the gap and exited 2, so nothing shipped wrong, but "the fleet absorbs a
+  # dead worker" had quietly become "re-run the whole thing".
+  #
+  # 120 s: four missed heartbeats to be declared dead, 180 s worst-case recovery, and
+  # a death anywhere in the first 63% of the map phase is fully absorbed. Derived and
+  # bounds-checked by model.lease_bounds(); plan_tasks.py refuses a run outside them.
+  SUNLIT_LEASE_SECONDS: "120"
+  # Four renewals per lease window.
   SUNLIT_HEARTBEAT_SECONDS: "30"
 
   # ---- Drain behaviour -----------------------------------------------------

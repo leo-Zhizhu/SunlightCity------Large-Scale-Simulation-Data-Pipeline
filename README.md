@@ -502,7 +502,7 @@ The schema and queue semantics are checked against a real PostgreSQL 16 + PostGI
 and the documentation is checked against the capacity model:
 
 ```bash
-distributed/db/tests/run_selftest.sh                # 45 assertions
+distributed/db/tests/run_selftest.sh                # 48 assertions
 python distributed/orchestrator/check_docs.py       # 18 quantities, tree-wide
 ```
 
@@ -594,7 +594,7 @@ Full breakdown and sensitivity: **[PERFORMANCE.md](docs/PERFORMANCE.md)**.
 │   │   ├── 05_post_load_indexes.sql   per-shard rollup · indexes · integrity
 │   │   ├── 06_serving_federation.sql  postgres_fdw across the shards
 │   │   ├── postgresql.{shard.bulk,shard.serving,coordinator}.conf
-│   │   └── tests/                     45 assertions against a real PostgreSQL
+│   │   └── tests/                     48 assertions against a real PostgreSQL
 │   ├── unity/Runtime/
 │   │   ├── SectionExposureSampler.cs      batched rays, allocation-free, bitset
 │   │   ├── ExposureWriter.cs             binary COPY on a background thread
