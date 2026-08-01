@@ -28,9 +28,9 @@ model that ships in the repo and re-runs in a single command.
 <table>
 <tr>
 <td align="center" width="25%"><h3>7.89 billion</h3><sub><b>measurements, kept in full</b><br>365,133 street positions ×<br>360 times a day × 60 days<br><i>nothing averaged away</i></sub></td>
-<td align="center" width="25%"><h3>11m 09s</h3><sub><b>end to end, for all of it</b><br>30 hours on one machine<br>→ <b>161× faster</b>, and 26%<br>inside a 15-minute deadline</sub></td>
-<td align="center" width="25%"><h3>16M rows/s</h3><sub><b>sustained into PostgreSQL</b><br>500 GB written with the<br>crash-recovery log skipped<br><b>entirely</b> — by schema design</sub></td>
-<td align="center" width="25%"><h3>54 &amp; 9</h3><sub><b>workers &amp; DB shards —<br>derived, not guessed</b><br>from the deadline, by<br><code>model.py --derive</code></sub></td>
+<td align="center" width="25%"><h3>161x faster</h3><sub><b>end to end, cut the work from </b><br>30 hours on one machine<br> to <b>11min 09s on the cluster</b>, 26%<br>inside a 15-minute deadline</sub></td>
+<td align="center" width="25%"><h3>16M rows/s</h3><sub><b>sustained into PostgreSQL</b><br>500 GB written with fine-tuned db parameters and optimized schema design</sub></td>
+<td align="center" width="25%"><h3>54 &amp; 9</h3><sub><b>workers &amp; DB shards —<br>derived, not guessed</b><br>from the deadline<br></sub></td>
 </tr>
 </table>
 
