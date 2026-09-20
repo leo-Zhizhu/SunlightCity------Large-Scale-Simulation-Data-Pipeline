@@ -215,7 +215,7 @@ python "Python & DB Scripts/Database/test_connection.py"
 
 # v2 · the distributed pipeline
 
-Same simulation. Same rows. 54 workers and 10 PostgreSQL instances — both numbers
+Same simulation. Same rows. 54 workers and 9 PostgreSQL instances — both numbers
 **derived** from a 15-minute deadline rather than chosen. The derivation is executable:
 `python distributed/orchestrator/model.py --derive`.
 
